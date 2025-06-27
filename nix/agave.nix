@@ -118,6 +118,11 @@ rustPlatform.buildRustPackage rec {
     cat > $out/bin/rustup <<'EOF'
     #!/usr/bin/env bash
 
+    # Debug logging
+    if [ -n "$RUST_LOG" ]; then
+      echo "[rustup shim] Called with: $@" >&2
+    fi
+
     case "$1" in
       "toolchain")
         case "$2" in
@@ -132,15 +137,29 @@ rustPlatform.buildRustPackage rec {
         esac
         ;;
       "which")
+        # Always return Solana's forked rustc/cargo
         case "$2" in
           "rustc")
-            which rustc
+            echo "$out/bin/rust/bin/rustc"
             ;;
           "cargo")
-            which cargo
+            echo "$out/bin/rust/bin/cargo"
             ;;
           *)
-            exit 0
+            # Handle formats like: rustup which --toolchain solana rustc
+            for arg in "$@"; do
+              case "$arg" in
+                "rustc")
+                  echo "$out/bin/rust/bin/rustc"
+                  exit 0
+                  ;;
+                "cargo")
+                  echo "$out/bin/rust/bin/cargo"
+                  exit 0
+                  ;;
+              esac
+            done
+            exit 1
             ;;
         esac
         ;;
@@ -166,6 +185,18 @@ rustPlatform.buildRustPackage rec {
         export CARGO="$out/bin/rust/bin/cargo"
         exec "$@"
         ;;
+      "run")
+        # Handle: rustup run solana <command>
+        if [ "$2" = "solana" ]; then
+          shift 2
+          export PATH="$out/bin/rust/bin:$out/bin/llvm/bin:$PATH"
+          export RUSTC="$out/bin/rust/bin/rustc"
+          export CARGO="$out/bin/rust/bin/cargo"
+          exec "$@"
+        else
+          exit 0
+        fi
+        ;;
       *)
         exit 0
         ;;
@@ -182,28 +213,28 @@ rustPlatform.buildRustPackage rec {
     export CARGO_BUILD_SBF_SDK="$out/sbf-sdk"
     export PATH="$out/bin:\$PATH"
     
-    # Don't set RUSTC/CARGO directly - let rustup shim handle it
-    # But we need the rustup shim to work
+    # Set RUSTC and CARGO to use Solana's forked versions
+    export RUSTC="$out/bin/rust/bin/rustc"
+    export CARGO="$out/bin/rust/bin/cargo"
     export RUSTUP="$out/bin/rustup"
 
     # Setup cache symlinks for cargo-build-sbf
-    PLATFORM_TOOLS_VERSION="v1.48"
+    PLATFORM_TOOLS_VERSION="${platformToolsVersion}"
     CACHE_DIR="\$HOME/.cache/solana/\$PLATFORM_TOOLS_VERSION/platform-tools"
-    if [ ! -d "\$CACHE_DIR" ]; then
-      echo "Setting up Solana platform-tools cache..."
-      mkdir -p "\$CACHE_DIR"
-      ln -sf "$out/bin/rust" "\$CACHE_DIR/rust"
-      ln -sf "$out/bin/llvm" "\$CACHE_DIR/llvm"
-      echo "\$PLATFORM_TOOLS_VERSION" > "\$CACHE_DIR/.version"
-    fi
+    echo "Setting up Solana platform-tools cache..."
+    mkdir -p "\$CACHE_DIR"
+    rm -rf "\$CACHE_DIR/rust" "\$CACHE_DIR/llvm"
+    ln -sf "$out/bin/rust" "\$CACHE_DIR/rust"
+    ln -sf "$out/bin/llvm" "\$CACHE_DIR/llvm"
+    echo "\$PLATFORM_TOOLS_VERSION" > "\$CACHE_DIR/.version"
     
     # Also setup SBF SDK cache
     SBF_CACHE_DIR="\$HOME/.cache/solana/v${version}/sbf-sdk"
-    if [ ! -d "\$SBF_CACHE_DIR" ]; then
-      echo "Setting up Solana SBF SDK cache..."
-      mkdir -p "\$(dirname "\$SBF_CACHE_DIR")"
-      ln -sf "$out/sbf-sdk" "\$SBF_CACHE_DIR"
-    fi
+    echo "Setting up Solana SBF SDK cache..."
+    mkdir -p "\$(dirname "\$SBF_CACHE_DIR")"
+    rm -rf "\$SBF_CACHE_DIR"
+    ln -sf "$out/sbf-sdk" "\$SBF_CACHE_DIR"
+    
     EOF
 
     chmod +x $out/bin/agave-env
