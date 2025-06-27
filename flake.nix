@@ -31,6 +31,7 @@
         rust = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" "clippy" "rustfmt" ];
         };
+        solana-agave = pkgs.callPackage ./nix/agave.nix { };
       in
       {
         devShell = pkgs.mkShell {
@@ -48,6 +49,8 @@
             go
             jq
             parallel
+            solana-agave
+            anchor
             rust
             protobuf
             buf
@@ -63,6 +66,8 @@
 
           shellHook = ''
             export RUST_SRC_PATH="${rust}/lib/rustlib/src/rust/library"
+            source ${solana-agave}/bin/agave-env
+            
             if [ -z "$(which cargo-prove)" ]; then
               echo "SP1 toolchain is not installed. This is recommended to generate risc-v elfs. To install, please follow the instructions at"
               echo "https://docs.succinct.xyz/docs/sp1/getting-started/install"
