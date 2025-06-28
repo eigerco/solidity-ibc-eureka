@@ -34,45 +34,65 @@
         solana-agave = pkgs.callPackage ./nix/agave.nix { };
       in
       {
-        devShell = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            openssl
-            openssl.dev
-            pkg-config
-            foundry-bin
-            go-ethereum
-            solc_0_8_28
-            (inputs.solc.mkDefault pkgs solc_0_8_28)
-            bun
-            just
-            golangci-lint
-            go
-            jq
-            parallel
-            solana-agave
-            anchor
-            rust
-            protobuf
-            buf
-            protoc-gen-go
-            protoc-gen-go-grpc
-            quicktype
-            inputs.natlint.packages.${system}.default
-          ];
+        devShells = {
+          default = pkgs.mkShell {
+            buildInputs = with pkgs; [
+              openssl
+              openssl.dev
+              pkg-config
+              foundry-bin
+              go-ethereum
+              solc_0_8_28
+              (inputs.solc.mkDefault pkgs solc_0_8_28)
+              bun
+              just
+              golangci-lint
+              go
+              jq
+              parallel
+              rust
+              protobuf
+              buf
+              protoc-gen-go
+              protoc-gen-go-grpc
+              quicktype
+              inputs.natlint.packages.${system}.default
+            ];
 
-          NIX_LD_LIBRARY_PATH = with pkgs.buildPackages; lib.makeLibraryPath [
-            stdenv.cc.cc
-          ];
+            NIX_LD_LIBRARY_PATH = with pkgs.buildPackages; lib.makeLibraryPath [
+              stdenv.cc.cc
+            ];
 
-          shellHook = ''
-            export RUST_SRC_PATH="${rust}/lib/rustlib/src/rust/library"
-            source ${solana-agave}/bin/agave-env
-            
-            if [ -z "$(which cargo-prove)" ]; then
-              echo "SP1 toolchain is not installed. This is recommended to generate risc-v elfs. To install, please follow the instructions at"
-              echo "https://docs.succinct.xyz/docs/sp1/getting-started/install"
-            fi
-          '';
+            shellHook = ''
+              export RUST_SRC_PATH="${rust}/lib/rustlib/src/rust/library"
+              if [ -z "$(which cargo-prove)" ]; then
+                echo "SP1 toolchain is not installed. This is recommended to generate risc-v elfs. To install, please follow the instructions at"
+                echo "https://docs.succinct.xyz/docs/sp1/getting-started/install"
+              fi
+            '';
+          };
+
+          solana = pkgs.mkShell {
+            buildInputs = with pkgs; [
+              openssl
+              openssl.dev
+              pkg-config
+              solana-agave
+              anchor
+              protobuf
+            ];
+
+            NIX_LD_LIBRARY_PATH = with pkgs.buildPackages; lib.makeLibraryPath [
+              stdenv.cc.cc
+            ];
+
+            shellHook = ''
+              source ${solana-agave}/bin/agave-env
+              echo "Solana development shell activated"
+              echo "Agave version: $(solana --version)"
+              echo "Anchor version: $(anchor --version)"
+            '';
+          };
         };
       }
     );
