@@ -110,118 +110,6 @@ rustPlatform.buildRustPackage rec {
     # Remove broken symlinks
     find $out/bin -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 
-    # Create rustup shim
-    cat > $out/bin/rustup <<'EOF'
-    #!/usr/bin/env bash
-
-    # Debug logging
-    if [ -n "$RUST_LOG" ]; then
-      echo "[rustup shim] Called with: $@" >&2
-    fi
-
-    case "$1" in
-      "toolchain")
-        case "$2" in
-          "list")
-            if [ "$3" = "-v" ] || [ "$3" = "--verbose" ]; then
-              echo "solana	$out/bin/rust"
-            else
-              echo "solana"
-            fi
-            ;;
-          "link")
-            # Handle: rustup toolchain link solana /path/to/rust
-            if [ "$3" = "solana" ]; then
-              # Just pretend it worked - our solana toolchain is already set up
-              exit 0
-            fi
-            ;;
-          *)
-            exit 0
-            ;;
-        esac
-        ;;
-      "which")
-        # Always return Solana's forked rustc/cargo
-        case "$2" in
-          "rustc")
-            echo "$out/bin/rust/bin/rustc"
-            ;;
-          "cargo")
-            echo "$out/bin/rust/bin/cargo"
-            ;;
-          *)
-            # Handle formats like: rustup which --toolchain solana rustc
-            for arg in "$@"; do
-              case "$arg" in
-                "rustc")
-                  echo "$out/bin/rust/bin/rustc"
-                  exit 0
-                  ;;
-                "cargo")
-                  echo "$out/bin/rust/bin/cargo"
-                  exit 0
-                  ;;
-              esac
-            done
-            exit 1
-            ;;
-        esac
-        ;;
-      "default")
-        echo "solana (default)"
-        ;;
-      "show")
-        echo "Default host: x86_64-unknown-linux-gnu"
-        echo "rustup home:  $out/bin"
-        echo ""
-        echo "installed toolchains"
-        echo "--------------------"
-        echo ""
-        echo "solana (default)"
-        echo ""
-        echo "active toolchain"
-        echo "----------------"
-        echo ""
-        echo "solana (default)"
-        echo "rustc 1.75.0-dev"
-        ;;
-      "+nightly"|"+stable")
-        # Skip these toolchains - just use solana
-        shift
-        export PATH="$out/bin/rust/bin:$out/bin/llvm/bin:$PATH"
-        export RUSTC="$out/bin/rust/bin/rustc"
-        export CARGO="$out/bin/rust/bin/cargo"
-        exec "$@"
-        ;;
-      "+solana")
-        shift
-        # Setup Solana toolchain environment
-        export PATH="$out/bin/rust/bin:$out/bin/llvm/bin:$PATH"
-        export RUSTC="$out/bin/rust/bin/rustc"
-        export CARGO="$out/bin/rust/bin/cargo"
-        exec "$@"
-        ;;
-      "run")
-        # Handle: rustup run solana <command>
-        if [ "$2" = "solana" ]; then
-          shift 2
-          export PATH="$out/bin/rust/bin:$out/bin/llvm/bin:$PATH"
-          export RUSTC="$out/bin/rust/bin/rustc"
-          export CARGO="$out/bin/rust/bin/cargo"
-          exec "$@"
-        else
-          exit 0
-        fi
-        ;;
-      *)
-        exit 0
-        ;;
-    esac
-    EOF
-
-    chmod +x $out/bin/rustup
-
     # Create environment setup script
     cat > $out/bin/agave-env <<EOF
     # Always export environment variables
@@ -233,7 +121,6 @@ rustPlatform.buildRustPackage rec {
     # Set RUSTC and CARGO to use Solana's forked versions
     export RUSTC="$out/bin/rust/bin/rustc"
     export CARGO="$out/bin/rust/bin/cargo"
-    export RUSTUP="$out/bin/rustup"
 
     # Setup cache symlinks for cargo-build-sbf
     PLATFORM_TOOLS_VERSION="${platformToolsVersion}"
@@ -244,14 +131,14 @@ rustPlatform.buildRustPackage rec {
     ln -sf "$out/bin/rust" "\$CACHE_DIR/rust"
     ln -sf "$out/bin/llvm" "\$CACHE_DIR/llvm"
     echo "\$PLATFORM_TOOLS_VERSION" > "\$CACHE_DIR/.version"
-    
+
     # Also setup SBF SDK cache
     SBF_CACHE_DIR="\$HOME/.cache/solana/v${version}/sbf-sdk"
     echo "Setting up Solana SBF SDK cache..."
     mkdir -p "\$(dirname "\$SBF_CACHE_DIR")"
     rm -rf "\$SBF_CACHE_DIR"
     ln -sf "$out/sbf-sdk" "\$SBF_CACHE_DIR"
-    
+
     EOF
 
     chmod +x $out/bin/agave-env
