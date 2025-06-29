@@ -85,9 +85,6 @@ rustPlatform.buildRustPackage rec {
     zlib
   ] ++ lib.optionals stdenv.isLinux [
     hidapi
-  ] ++ lib.optionals stdenv.isDarwin [
-    darwin.apple_sdk.frameworks.Security or darwin.Security or null
-    darwin.apple_sdk.frameworks.SystemConfiguration or darwin.SystemConfiguration or null
   ];
 
   postPatch = ''
@@ -104,8 +101,7 @@ rustPlatform.buildRustPackage rec {
     tar -xjf ${platformTools} -C $out/bin/
 
     # Extract SBF SDK
-    mkdir -p $out/sbf-sdk
-    tar -xjf ${sbfSdk} -C $out/sbf-sdk/
+    tar -xjf ${sbfSdk} -C $out/
 
     # The SBF SDK expects platform-tools to be in dependencies/platform-tools
     mkdir -p $out/sbf-sdk/dependencies
@@ -127,9 +123,18 @@ rustPlatform.buildRustPackage rec {
       "toolchain")
         case "$2" in
           "list")
-            echo "stable-x86_64-unknown-linux-gnu (default)"
-            echo "nightly-x86_64-unknown-linux-gnu"
-            echo "solana"
+            if [ "$3" = "-v" ] || [ "$3" = "--verbose" ]; then
+              echo "solana	$out/bin/rust"
+            else
+              echo "solana"
+            fi
+            ;;
+          "link")
+            # Handle: rustup toolchain link solana /path/to/rust
+            if [ "$3" = "solana" ]; then
+              # Just pretend it worked - our solana toolchain is already set up
+              exit 0
+            fi
             ;;
           *)
             exit 0
@@ -164,17 +169,29 @@ rustPlatform.buildRustPackage rec {
         esac
         ;;
       "default")
-        echo "stable-x86_64-unknown-linux-gnu (default)"
+        echo "solana (default)"
         ;;
       "show")
         echo "Default host: x86_64-unknown-linux-gnu"
-        echo "rustup home:  $HOME/.rustup"
+        echo "rustup home:  $out/bin"
         echo ""
-        echo "stable-x86_64-unknown-linux-gnu (default)"
-        echo "rustc 1.75.0 (fake rustup shim)"
+        echo "installed toolchains"
+        echo "--------------------"
+        echo ""
+        echo "solana (default)"
+        echo ""
+        echo "active toolchain"
+        echo "----------------"
+        echo ""
+        echo "solana (default)"
+        echo "rustc 1.75.0-dev"
         ;;
       "+nightly"|"+stable")
+        # Skip these toolchains - just use solana
         shift
+        export PATH="$out/bin/rust/bin:$out/bin/llvm/bin:$PATH"
+        export RUSTC="$out/bin/rust/bin/rustc"
+        export CARGO="$out/bin/rust/bin/cargo"
         exec "$@"
         ;;
       "+solana")
@@ -208,11 +225,11 @@ rustPlatform.buildRustPackage rec {
     # Create environment setup script
     cat > $out/bin/agave-env <<EOF
     # Always export environment variables
-    export BPF_SDK_PATH="$out/sbf-sdk"
     export SBF_SDK_PATH="$out/sbf-sdk"
     export CARGO_BUILD_SBF_SDK="$out/sbf-sdk"
     export PATH="$out/bin:\$PATH"
-    
+    export PATH="$out/bin/rust/bin:\$PATH"
+
     # Set RUSTC and CARGO to use Solana's forked versions
     export RUSTC="$out/bin/rust/bin/rustc"
     export CARGO="$out/bin/rust/bin/cargo"
