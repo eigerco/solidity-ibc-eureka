@@ -122,60 +122,6 @@ let
     doCheck = false;
   };
 
-  # Environment setup script
-  agaveEnv = writeShellScriptBin "agave-env" ''
-    # Setup function for Agave environment
-    setup_agave_env() {
-      # First, clean up any existing Rust toolchain paths
-      export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "rust-bin" | grep -v ".cargo/bin" | grep -v "rustup" | tr '\n' ':')
-
-      # Unset any existing Rust environment variables
-      unset RUSTC CARGO
-
-      # Now set up Agave environment
-      export SBF_SDK_PATH="${agave}/sbf-sdk"
-      export CARGO_BUILD_SBF_SDK="${agave}/sbf-sdk"
-      export PATH="${agave}/bin:$PATH"
-      export PATH="${agave}/bin/rust/bin:$PATH"
-      export RUSTC="${agave}/bin/rust/bin/rustc"
-      export CARGO="${agave}/bin/rust/bin/cargo"
-
-      # Setup cache symlinks for cargo-build-sbf
-      PLATFORM_TOOLS_VERSION="${platformToolsVersion}"
-      CACHE_DIR="$HOME/.cache/solana/$PLATFORM_TOOLS_VERSION/platform-tools"
-      mkdir -p "$CACHE_DIR"
-      rm -rf "$CACHE_DIR/rust" "$CACHE_DIR/llvm"
-      ln -sf "${agave}/bin/rust" "$CACHE_DIR/rust"
-      ln -sf "${agave}/bin/llvm" "$CACHE_DIR/llvm"
-      echo "$PLATFORM_TOOLS_VERSION" > "$CACHE_DIR/.version"
-
-      # Also setup SBF SDK cache
-      SBF_CACHE_DIR="$HOME/.cache/solana/v${agave-version}/sbf-sdk"
-      mkdir -p "$(dirname "$SBF_CACHE_DIR")"
-      rm -rf "$SBF_CACHE_DIR"
-      ln -sf "${agave}/sbf-sdk" "$SBF_CACHE_DIR"
-    }
-
-    # Setup function for nightly environment
-    setup_nightly_env() {
-      # Remove agave paths from PATH
-      export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "${agave}" | tr '\n' ':')
-
-      # Unset Agave-specific environment variables
-      unset RUSTC CARGO SBF_SDK_PATH CARGO_BUILD_SBF_SDK
-
-      # Add rust nightly to PATH
-      export PATH="${rustNightly}/bin:$PATH"
-    }
-
-    # If executed directly, show available functions
-    if [[ "$0" == "$BASH_SOURCE" ]]; then
-      echo "Available functions:"
-      echo "  setup_agave_env   - Set up Solana/Agave toolchain"
-      echo "  setup_nightly_env - Set up Rust nightly toolchain"
-    fi
-  '';
-
   # Anchor-nix wrapper script that handles toolchain switching
   anchorNix = writeShellScriptBin "anchor-nix" ''
     #!/usr/bin/env bash
@@ -190,7 +136,6 @@ let
 
       # Set up Agave environment
       export SBF_SDK_PATH="${agave}/sbf-sdk"
-      export CARGO_BUILD_SBF_SDK="${agave}/sbf-sdk"
       export PATH="${agave}/bin/rust/bin:$PATH"
       export RUSTC="${agave}/bin/rust/bin/rustc"
       export CARGO="${agave}/bin/rust/bin/cargo"
@@ -211,7 +156,7 @@ let
       export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "rust-bin" | grep -v ".cargo/bin" | grep -v "rustup" | grep -v "${agave}" | tr '\n' ':')
 
       # Unset Agave-specific environment variables
-      unset RUSTC CARGO SBF_SDK_PATH CARGO_BUILD_SBF_SDK
+      unset RUSTC CARGO SBF_SDK_PATH
 
       # Add rust nightly to PATH
       export PATH="${rustNightly}/bin:$PATH"
@@ -297,7 +242,6 @@ stdenv.mkDerivation {
     cp -r ${agave}/sbf-sdk $out/
 
     # Add the wrapper scripts
-    cp ${agaveEnv}/bin/* $out/bin/
     cp ${anchorNix}/bin/* $out/bin/
   '';
 

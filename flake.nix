@@ -90,14 +90,12 @@
               echo ""
               echo "Available commands:"
               echo "  solana      - Solana CLI tool"
-              echo "  anchor      - Standard Anchor framework"
-              echo "  anchor-nix  - Optimized Anchor wrapper for Nix environments"
+              echo "  anchor-nix  - Anchor wrapper for Nix environments"
               echo ""
               echo "Use 'anchor-nix' for optimized builds:"
               echo "  anchor-nix build  - Build with Solana toolchain + generate IDL with nightly"
               echo "  anchor-nix test   - Build and test with automatic toolchain switching"
               echo ""
-              echo "Default Rust toolchain: $(rustc --version)"
             '';
           };
         };
