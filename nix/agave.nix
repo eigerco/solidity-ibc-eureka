@@ -257,33 +257,6 @@ let
         "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${@:2}"
         BUILD_RESULT=$?
         
-        if [[ $BUILD_RESULT -eq 0 ]]; then
-          # Generate IDL with nightly
-          echo "📝 Generating IDL with nightly toolchain..."
-          setup_nightly
-          "$REAL_ANCHOR" idl build "''${@:2}"
-          IDL_RESULT=$?
-          
-          if [[ $IDL_RESULT -eq 0 ]]; then
-            # Run tests with nightly toolchain (tests often need nightly features)
-            echo "🧪 Running tests with nightly toolchain..."
-            "$REAL_ANCHOR" test --skip-build "''${@:2}"
-            TEST_RESULT=$?
-            
-            if [[ $TEST_RESULT -eq 0 ]]; then
-              echo "✅ All tests passed!"
-            else
-              echo "❌ Tests failed"
-              exit $TEST_RESULT
-            fi
-          else
-            echo "⚠️  IDL generation failed"
-            exit $IDL_RESULT
-          fi
-        else
-          echo "❌ Program build failed"
-          exit $BUILD_RESULT
-        fi
         ;;
         
       *)
