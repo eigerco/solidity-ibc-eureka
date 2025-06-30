@@ -171,24 +171,38 @@ let
         setup_solana
         "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${@:2}"
 
-        #FIXME: IDL
-        # BUILD_RESULT=$?
+        BUILD_RESULT=$?
 
         if [[ $BUILD_RESULT -eq 0 ]]; then
-          # If build succeeded, generate IDL with nightly toolchain
-          echo "📝 Generating IDL with nightly toolchain..."
-          setup_nightly
+          # Check if any program has idl-build feature
+          echo "🔍 Checking for IDL build feature..."
+          HAS_IDL_BUILD=false
+          
+          # Find all Cargo.toml files in programs directory
+          for cargo_toml in programs/*/Cargo.toml; do
+            if [[ -f "$cargo_toml" ]] && grep -q "idl-build" "$cargo_toml"; then
+              HAS_IDL_BUILD=true
+              echo "   Found idl-build feature in $cargo_toml"
+              break
+            fi
+          done
+          
+          if [[ "$HAS_IDL_BUILD" == "true" ]]; then
+            # If idl-build feature found, generate IDL with nightly toolchain
+            echo "📝 Generating IDL with nightly toolchain..."
+            setup_nightly
+            cargo build --features=idl-build
+            IDL_RESULT=$?
 
-          which rustc
-          which cargo
-          "$REAL_ANCHOR" idl build "''${@:2}"
-          IDL_RESULT=$?
-
-          if [[ $IDL_RESULT -eq 0 ]]; then
-            echo "✅ Build complete: program built with Solana toolchain, IDL generated with nightly"
+            if [[ $IDL_RESULT -eq 0 ]]; then
+              echo "✅ Build complete: program built with Solana toolchain, IDL generated with nightly"
+            else
+              echo "⚠️  Program built successfully, but IDL generation failed"
+              exit $IDL_RESULT
+            fi
           else
-            echo "⚠️  Program built successfully, but IDL generation failed"
-            exit $IDL_RESULT
+            echo "ℹ️  Skipping IDL generation (no idl-build feature found in Cargo.toml)"
+            echo "✅ Build complete: program built with Solana toolchain"
           fi
         else
           echo "❌ Program build failed"
@@ -203,7 +217,53 @@ let
         echo "📦 Building program with Solana/Agave toolchain..."
         setup_solana
         "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${@:2}"
-
+        BUILD_RESULT=$?
+        
+        if [[ $BUILD_RESULT -eq 0 ]]; then
+          # Check if any program has idl-build feature
+          echo "🔍 Checking for IDL build feature..."
+          HAS_IDL_BUILD=false
+          
+          # Find all Cargo.toml files in programs directory
+          for cargo_toml in programs/*/Cargo.toml; do
+            if [[ -f "$cargo_toml" ]] && grep -q "idl-build" "$cargo_toml"; then
+              HAS_IDL_BUILD=true
+              echo "   Found idl-build feature in $cargo_toml"
+              break
+            fi
+          done
+          
+          # Switch to nightly for IDL (if needed) and tests
+          setup_nightly
+          
+          if [[ "$HAS_IDL_BUILD" == "true" ]]; then
+            echo "📝 Generating IDL with nightly toolchain..."
+            "$REAL_ANCHOR" idl build "''${@:2}"
+            IDL_RESULT=$?
+            
+            if [[ $IDL_RESULT -ne 0 ]]; then
+              echo "⚠️  IDL generation failed"
+              exit $IDL_RESULT
+            fi
+          else
+            echo "ℹ️  Skipping IDL generation (no idl-build feature found)"
+          fi
+          
+          # Run tests with nightly toolchain
+          echo "🧪 Running tests with nightly toolchain..."
+          "$REAL_ANCHOR" test --skip-build "''${@:2}"
+          TEST_RESULT=$?
+          
+          if [[ $TEST_RESULT -eq 0 ]]; then
+            echo "✅ All tests passed!"
+          else
+            echo "❌ Tests failed"
+            exit $TEST_RESULT
+          fi
+        else
+          echo "❌ Program build failed"
+          exit $BUILD_RESULT
+        fi
         ;;
 
       *)
