@@ -255,7 +255,6 @@ let
         echo "📦 Building program with Solana/Agave toolchain..."
         setup_solana
         "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${@:2}"
-        BUILD_RESULT=$?
         
         ;;
         
