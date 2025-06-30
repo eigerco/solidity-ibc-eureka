@@ -1,20 +1,16 @@
 {
   description = "Development environment for Solidity IBC Eureka";
-
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-
     solc = {
       url = "github:hellwolf/solc.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     foundry.url = "github:shazow/foundry.nix/main";
     rust-overlay.url = "github:oxalica/rust-overlay";
-
     natlint.url = "github:srdtrk/natlint";
   };
-
   outputs = inputs: inputs.flake-utils.lib.eachSystem
     [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ]
     (
@@ -31,7 +27,12 @@
         rust = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" "clippy" "rustfmt" ];
         };
-        solana-agave = pkgs.callPackage ./nix/agave.nix { };
+        rustNightly = pkgs.rust-bin.nightly.latest.default.override {
+          extensions = [ "rust-src" ];
+        };
+        solana-agave = pkgs.callPackage ./nix/agave.nix {
+          inherit (pkgs) rust-bin anchor;
+        };
       in
       {
         devShells = {
@@ -58,11 +59,9 @@
               quicktype
               inputs.natlint.packages.${system}.default
             ];
-
             NIX_LD_LIBRARY_PATH = with pkgs.buildPackages; lib.makeLibraryPath [
               stdenv.cc.cc
             ];
-
             shellHook = ''
               export RUST_SRC_PATH="${rust}/lib/rustlib/src/rust/library"
               if [ -z "$(which cargo-prove)" ]; then
@@ -71,7 +70,6 @@
               fi
             '';
           };
-
           solana = pkgs.mkShell {
             buildInputs = with pkgs; [
               openssl
@@ -81,16 +79,25 @@
               anchor
               protobuf
             ];
-
             NIX_LD_LIBRARY_PATH = with pkgs.buildPackages; lib.makeLibraryPath [
               stdenv.cc.cc
             ];
-
             shellHook = ''
-              source ${solana-agave}/bin/agave-env
+              # Add Solana tools to PATH
+              export PATH="${solana-agave}/bin:$PATH"
+              echo ""
               echo "Solana development shell activated"
-              echo "Agave version: $(solana --version)"
-              echo "Anchor version: $(anchor --version)"
+              echo ""
+              echo "Available commands:"
+              echo "  solana      - Solana CLI tool"
+              echo "  anchor      - Standard Anchor framework"
+              echo "  anchor-nix  - Optimized Anchor wrapper for Nix environments"
+              echo ""
+              echo "Use 'anchor-nix' for optimized builds:"
+              echo "  anchor-nix build  - Build with Solana toolchain + generate IDL with nightly"
+              echo "  anchor-nix test   - Build and test with automatic toolchain switching"
+              echo ""
+              echo "Default Rust toolchain: $(rustc --version)"
             '';
           };
         };
