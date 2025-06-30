@@ -51,10 +51,10 @@ let
   platformTools = fetchurl {
     url = "https://github.com/anza-xyz/platform-tools/releases/download/${platformToolsVersion}/${platformToolsArchive}";
     sha256 =
-      if stdenv.isDarwin && stdenv.isx86_64 then "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      if stdenv.isDarwin && stdenv.isx86_64 then "sha256-0qik6gpvcq2rav1qy43n5vjipfa3m756p452y0fikir4cl5fvd5w="
       else if stdenv.isDarwin && stdenv.isAarch64 then "sha256-eZ5M/O444icVXIP7IpT5b5SoQ9QuAcA1n7cSjiIW0t0="
       else if stdenv.isLinux && stdenv.isx86_64 then "sha256-vHeOPs7B7WptUJ/mVvyt7ue+MqfqAsbwAHM+xlN/tgQ="
-      else if stdenv.isLinux && stdenv.isAarch64 then "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      else if stdenv.isLinux && stdenv.isAarch64 then "sha256-1wkh3vry4sc83ia8zfbv6yb6d7ygqsy88r1nj13y5fgp48i05imf="
       else throw "No hash for platform";
   };
 
