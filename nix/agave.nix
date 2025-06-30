@@ -227,25 +227,27 @@ let
         echo "📦 Building program with Solana/Agave toolchain..."
         setup_solana
         "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${@:2}"
-        BUILD_RESULT=$?
+
+        #FIXME: IDL
+        # BUILD_RESULT=$?
         
-        if [[ $BUILD_RESULT -eq 0 ]]; then
-          # If build succeeded, generate IDL with nightly toolchain
-          echo "📝 Generating IDL with nightly toolchain..."
-          setup_nightly
-          "$REAL_ANCHOR" idl build "''${@:2}"
-          IDL_RESULT=$?
-          
-          if [[ $IDL_RESULT -eq 0 ]]; then
-            echo "✅ Build complete: program built with Solana toolchain, IDL generated with nightly"
-          else
-            echo "⚠️  Program built successfully, but IDL generation failed"
-            exit $IDL_RESULT
-          fi
-        else
-          echo "❌ Program build failed"
-          exit $BUILD_RESULT
-        fi
+        # if [[ $BUILD_RESULT -eq 0 ]]; then
+        #   # If build succeeded, generate IDL with nightly toolchain
+        #   echo "📝 Generating IDL with nightly toolchain..."
+        #   setup_nightly
+        #   "$REAL_ANCHOR" idl build "''${@:2}"
+        #   IDL_RESULT=$?
+        #
+        #   if [[ $IDL_RESULT -eq 0 ]]; then
+        #     echo "✅ Build complete: program built with Solana toolchain, IDL generated with nightly"
+        #   else
+        #     echo "⚠️  Program built successfully, but IDL generation failed"
+        #     exit $IDL_RESULT
+        #   fi
+        # else
+        #   echo "❌ Program build failed"
+        #   exit $BUILD_RESULT
+        # fi
         ;;
         
       test)
