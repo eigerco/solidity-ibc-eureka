@@ -178,7 +178,20 @@ let
     };
   };
 
-  # Anchor-nix wrapper script that handles toolchain switching
+  # Anchor-nix wrapper script
+  #
+  # Why we need this wrapper:
+  # 1. Anchor CLI requires different Rust toolchains for different operations:
+  #    - Building Solana programs: Requires the specific Solana/Agave Rust toolchain
+  #      that is forked and maintained by Solana
+  #    - Generating IDLs: Requires Rust nightly
+  #    - Tests: Requires Rust nightly
+  # 2. The wrapper intelligently switches between toolchains:
+  #    - Strips existing Rust paths from PATH to avoid conflicts
+  #    - Sets up the correct toolchain for each operation
+  #    - No need to add rustup shims
+  #    - Handles the complexity of toolchain management transparently
+  #
   anchorNix = writeShellScriptBin "anchor-nix" ''
     #!${stdenv.shell}
     set -euo pipefail
