@@ -183,9 +183,10 @@ let
     set -euo pipefail
 
     readonly REAL_ANCHOR="${anchor}/bin/anchor"
+    echo ${agave}
 
     # Export SBF SDK path for all operations
-    export SBF_SDK_PATH="${sbfSdk}/sbf-sdk"
+    export SBF_SDK_PATH="${sbfSdk}"
     echo "Using sbf-sdk at $SBF_SDK_PATH"
     echo ${platformTools}
 
@@ -230,7 +231,7 @@ let
       echo "🔨 Building Solana program with solana toolchain setup..."
       echo "📦 Building program with Solana/Agave toolchain..."
 
-      # setup_solana
+       setup_solana
 
       if ! "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${extra_args[@]}"; then
         echo "❌ Program build failed"
