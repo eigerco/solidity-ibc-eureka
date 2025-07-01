@@ -183,6 +183,7 @@ let
     # Export SBF SDK path for all operations
     export SBF_SDK_PATH="${sbfSdk}/sbf-sdk"
     echo "Using sbf-sdk at $SBF_SDK_PATH"
+    echo ${platformTools}
 
     clean_rust_from_path() {
       echo "$PATH" | tr ':' '\n' | \
@@ -225,7 +226,7 @@ let
       echo "🔨 Building Solana program with solana toolchain setup..."
       echo "📦 Building program with Solana/Agave toolchain..."
 
-      setup_solana
+      # setup_solana
 
       if ! "$REAL_ANCHOR" build --no-idl -- --no-rustup-override --skip-tools-install "''${extra_args[@]}"; then
         echo "❌ Program build failed"
