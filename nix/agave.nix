@@ -88,6 +88,10 @@ let
     unpackPhase = ''
       mkdir -p $out
       tar -xjf $src -C $out
+      
+      # Create symlink to platform tools
+      mkdir -p $out/dependencies
+      ln -s ${platformTools} $out/dependencies/platform-tools
     '';
 
     meta = with lib; {
