@@ -1,6 +1,7 @@
 { lib
 , stdenv
 , fetchFromGitHub
+, symlinkJoin
 , fetchurl
 , rustPlatform
 , pkg-config
@@ -34,7 +35,6 @@ let
   inherit (lib) optionals;
   inherit (stdenv) hostPlatform isLinux;
 
-  # Version management
   versions = {
     agave = "2.2.17";
     platformTools = "v1.48";
@@ -45,7 +45,6 @@ let
     extensions = [ "rust-src" ];
   };
 
-  # Platform-specific configuration
   platformConfig = {
     x86_64-darwin = {
       archive = "platform-tools-osx-x86_64.tar.bz2";
@@ -68,15 +67,59 @@ let
   currentPlatform = platformConfig.${hostPlatform.system} or
     (throw "Unsupported platform: ${hostPlatform.system}");
 
-  platformTools = fetchurl {
+  platformToolsArchive = fetchurl {
     url = "https://github.com/anza-xyz/platform-tools/releases/download/${versions.platformTools}/${currentPlatform.archive}";
     inherit (currentPlatform) sha256;
   };
 
-  # Download SBF SDK from Agave releases
-  sbfSdk = fetchurl {
+  # Download SBF SDK archive from Agave releases
+  sbfSdkArchive = fetchurl {
     url = "https://github.com/anza-xyz/agave/releases/download/v${versions.agave}/sbf-sdk.tar.bz2";
     sha256 = "18nh745djcnkbs0jz7bkaqrlwkbi5x28xdnr2lkgrpybwmdfg06s";
+  };
+
+  # SBF SDK derivation
+  sbfSdk = stdenv.mkDerivation {
+    pname = "sbf-sdk";
+    version = versions.agave;
+
+    src = sbfSdkArchive;
+
+    unpackPhase = ''
+      mkdir -p $out
+      tar -xjf $src -C $out
+    '';
+
+    meta = with lib; {
+      description = "Solana BPF SDK for building on-chain programs";
+      homepage = "https://github.com/anza-xyz/agave";
+      license = licenses.asl20;
+      maintainers = with maintainers; [ vaporif ];
+      platforms = platforms.unix;
+    };
+  };
+
+  platformTools = stdenv.mkDerivation {
+    pname = "platformTools";
+    version = versions.platformTools;
+
+    src = platformToolsArchive;
+
+    unpackPhase = ''
+      mkdir -p $out
+      tar -xjf $src -C $out
+
+      # otherwsie used only in debugging lldb-argdumper in this package will point to a dangling link
+      find $out -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+    '';
+
+    meta = with lib; {
+      description = "Solana platform tools for building on-chain programs";
+      homepage = "https://github.com/anza-xyz/platformTools";
+      license = licenses.asl20;
+      maintainers = with maintainers; [ vaporif ];
+      platforms = platforms.unix;
+    };
   };
 
   # Agave package bundled with Solana CLI & programs & toolchain & platform tools
@@ -115,17 +158,7 @@ let
     '';
 
     postInstall = ''
-      # Extract platform-tools
-      tar -xjf ${platformTools} -C $out/bin/
-
-      # Extract SBF SDK
-      tar -xjf ${sbfSdk} -C $out/
-
-      # The SBF SDK expects platform-tools to be in dependencies/platform-tools
-      mkdir -p $out/sbf-sdk/dependencies
-      ln -sf $out/bin $out/sbf-sdk/dependencies/platform-tools
-
-      # Remove broken symlinks
+      # otherwsie used only in debugging lldb-argdumper in this package will point to a dangling link
       find $out/bin -type l ! -exec test -e {} \; -delete 2>/dev/null || true
     '';
 
@@ -135,7 +168,7 @@ let
       description = "Solana runtime and toolchain";
       homepage = "https://github.com/anza-xyz/agave";
       license = licenses.asl20;
-      maintainers = with maintainers; [ ];
+      maintainers = with maintainers; [ vaporif ];
       platforms = platforms.unix;
     };
   };
@@ -145,13 +178,12 @@ let
     #!${stdenv.shell}
     set -euo pipefail
 
-    # Store the original anchor path
     readonly REAL_ANCHOR="${anchor}/bin/anchor"
-    readonly PLATFORM_TOOLS_VERSION="${versions.platformTools}"
-    readonly AGAVE_PATH="${agave}"
-    readonly RUST_NIGHTLY_PATH="${rustNightly}"
 
-    # Function to clean PATH of rust toolchains
+    # Export SBF SDK path for all operations
+    export SBF_SDK_PATH="${sbfSdk}/sbf-sdk"
+    echo "Using sbf-sdk at $SBF_SDK_PATH"
+
     clean_rust_from_path() {
       echo "$PATH" | tr ':' '\n' | \
         grep -v "rust-bin" | \
@@ -160,40 +192,25 @@ let
         tr '\n' ':'
     }
 
-    # Function to setup Solana toolchain
     setup_solana() {
       # Clean PATH of any rust toolchains
       export PATH=$(clean_rust_from_path)
 
       # Set up Agave environment
-      export SBF_SDK_PATH="$AGAVE_PATH/sbf-sdk"
-      export PATH="$AGAVE_PATH/bin/rust/bin:$PATH"
-      export RUSTC="$AGAVE_PATH/bin/rust/bin/rustc"
-      export CARGO="$AGAVE_PATH/bin/rust/bin/cargo"
-
-      # Setup cache symlinks for cargo-build-sbf
-      local cache_dir="$HOME/.cache/solana/$PLATFORM_TOOLS_VERSION/platform-tools"
-      mkdir -p "$cache_dir"
-      
-      # Use atomic operations for cache setup
-      {
-        rm -rf "$cache_dir/rust" "$cache_dir/llvm"
-        ln -sf "$AGAVE_PATH/bin/rust" "$cache_dir/rust"
-        ln -sf "$AGAVE_PATH/bin/llvm" "$cache_dir/llvm"
-        echo "$PLATFORM_TOOLS_VERSION" > "$cache_dir/.version"
-      } 2>/dev/null || true
+      export PATH="${platformTools}/rust/bin:$PATH"
+      export RUSTC="${platformTools}/rust/bin/rustc"
+      export CARGO="${platformTools}/rust/bin/cargo"
+      echo "RUSTC at $RUSTC"
     }
 
-    # Function to setup nightly toolchain
     setup_nightly() {
       # Clean PATH including agave
-      export PATH=$(clean_rust_from_path | sed "s|$AGAVE_PATH||g")
+      export PATH=$(clean_rust_from_path | sed "s|${platformTools}||g")
 
       # Unset Agave-specific environment variables
-      unset RUSTC CARGO SBF_SDK_PATH || true
+      unset RUSTC CARGO || true
 
-      # Add rust nightly to PATH
-      export PATH="$RUST_NIGHTLY_PATH/bin:$PATH"
+      export PATH="${rustNightly}/bin:$PATH"
     }
 
     has_idl_build_feature() {
@@ -287,36 +304,12 @@ EOF
   '';
 
 in
-# Final derivation
-stdenv.mkDerivation {
-  pname = "agave-with-toolchain";
-  version = versions.agave;
-
-  dontUnpack = true;
-  dontBuild = true;
-
-  installPhase = ''
-    runHook preInstall
-
-    # Create output directory structure
-    mkdir -p $out/bin
-
-    # Copy everything from agave
-    cp -a ${agave}/* $out/
-
-    # Make bin directory writable
-    chmod u+w $out/bin
-
-    # Add the wrapper scripts
-    cp -f ${anchorNix}/bin/* $out/bin/
-    chmod 755 $out/bin/*
-
-    runHook postInstall
-  '';
+symlinkJoin {
+  name = "agave-with-toolchain-${versions.agave}";
+  paths = [ agave  anchorNix anchor ];
 
   passthru = {
     inherit agave rustNightly;
-    unwrapped = agave;
   };
 
   meta = agave.meta // {
