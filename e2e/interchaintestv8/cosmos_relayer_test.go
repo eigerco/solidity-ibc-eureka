@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +17,9 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/cosmos-sdk/codec/types"
 
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -46,6 +51,10 @@ type CosmosRelayerTestSuite struct {
 	SimdBSubmitter ibc.Wallet
 
 	RelayerClient relayertypes.RelayerServiceClient
+	
+	// Fixture generation
+	generateSolanaFixtures bool
+	solanaFixtureDir      string
 }
 
 // TestWithIbcEurekaTestSuite is the boilerplate code that allows the test suite to be run
@@ -59,6 +68,24 @@ func (s *CosmosRelayerTestSuite) SetupSuite(ctx context.Context) {
 	chainconfig.DefaultChainSpecs = append(chainconfig.DefaultChainSpecs, chainconfig.IbcGoChainSpec("ibc-go-simd-2", "simd-2"))
 
 	os.Setenv(testvalues.EnvKeyEthTestnetType, testvalues.EthTestnetTypeNone)
+
+	// Initialize fixture generation
+	s.generateSolanaFixtures = os.Getenv("GENERATE_SOLANA_FIXTURES") == "true"
+	s.solanaFixtureDir = "programs/solana/tests/fixtures/"
+	
+	if s.generateSolanaFixtures {
+		// Create absolute path to avoid issues with directory changes
+		absPath, err := filepath.Abs(filepath.Join("..", s.solanaFixtureDir))
+		if err != nil {
+			s.T().Fatalf("Failed to get absolute path for fixtures: %v", err)
+		}
+		s.solanaFixtureDir = absPath
+		
+		if err := os.MkdirAll(s.solanaFixtureDir, 0755); err != nil {
+			s.T().Fatalf("Failed to create Solana fixture directory: %v", err)
+		}
+		s.T().Logf("📁 Solana fixtures will be saved to: %s", s.solanaFixtureDir)
+	}
 
 	s.TestSuite.SetupSuite(ctx)
 
@@ -563,6 +590,12 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().Empty(resp.Address)
 
 			updateTxBodyBz = resp.Tx
+			
+			// Generate Solana fixtures if enabled
+			if s.generateSolanaFixtures {
+				s.T().Log("🔧 Generating Solana fixtures from update client transaction")
+				s.generateSolanaFixturesFromUpdateTx(ctx, updateTxBodyBz)
+			}
 		}))
 
 		s.Require().True(s.Run("Broadcast update client tx", func() {
@@ -582,4 +615,144 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().Greater(tmClientState.LatestHeight.RevisionHeight, initialHeight)
 		}))
 	}))
+}
+
+// generateSolanaFixturesFromUpdateTx extracts the update client data and generates Solana fixtures
+func (s *CosmosRelayerTestSuite) generateSolanaFixturesFromUpdateTx(ctx context.Context, updateTxBodyBz []byte) {
+	s.T().Log("🔍 Parsing update client transaction")
+	
+	// Parse the transaction body
+	var txBody txtypes.TxBody
+	err := proto.Unmarshal(updateTxBodyBz, &txBody)
+	s.Require().NoError(err)
+	s.Require().Len(txBody.Messages, 1, "Expected exactly one message in update client tx")
+	
+	// Extract the MsgUpdateClient
+	var msgUpdateClient clienttypes.MsgUpdateClient
+	err = proto.Unmarshal(txBody.Messages[0].Value, &msgUpdateClient)
+	s.Require().NoError(err)
+	
+	s.T().Logf("📊 Found MsgUpdateClient for client: %s", msgUpdateClient.ClientId)
+	
+	// Extract the client message (this is the protobuf header that Solana needs)
+	clientMessage := msgUpdateClient.ClientMessage
+	s.Require().NotNil(clientMessage)
+	
+	// Generate fixtures
+	s.generateSolanaClientStateFixture(ctx)
+	s.generateSolanaConsensusStateFixture(ctx)
+	s.generateSolanaUpdateClientMessageFixture(clientMessage)
+	
+	s.T().Log("✅ Solana fixtures generated successfully")
+}
+
+// generateSolanaClientStateFixture generates a client state fixture for Solana
+func (s *CosmosRelayerTestSuite) generateSolanaClientStateFixture(ctx context.Context) {
+	s.T().Log("🔧 Generating ClientState fixture")
+	
+	// Query the client state from SimdA
+	resp, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, s.SimdA, &clienttypes.QueryClientStateRequest{
+		ClientId: ibctesting.FirstClientID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.ClientState)
+	
+	// Unmarshal the Tendermint client state
+	var tmClientState ibctmtypes.ClientState
+	err = proto.Unmarshal(resp.ClientState.Value, &tmClientState)
+	s.Require().NoError(err)
+	
+	// Convert to Solana format
+	solanaClientState := map[string]interface{}{
+		"chain_id":                  tmClientState.ChainId,
+		"trust_level_numerator":     tmClientState.TrustLevel.Numerator,
+		"trust_level_denominator":   tmClientState.TrustLevel.Denominator,
+		"trusting_period":           tmClientState.TrustingPeriod.Seconds(),
+		"unbonding_period":          tmClientState.UnbondingPeriod.Seconds(),
+		"max_clock_drift":           tmClientState.MaxClockDrift.Seconds(),
+		"frozen_height":             tmClientState.FrozenHeight.RevisionHeight,
+		"latest_height":             tmClientState.LatestHeight.RevisionHeight,
+		"metadata": map[string]interface{}{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"source":       "real_cosmos_chain",
+			"description":  fmt.Sprintf("Client state for %s captured from %s", tmClientState.ChainId, s.SimdA.Config().ChainID),
+		},
+	}
+	
+	// Save to file
+	filename := filepath.Join(s.solanaFixtureDir, "client_state.json")
+	s.saveJsonFixture(filename, solanaClientState)
+	s.T().Logf("💾 Client state fixture saved: %s", filename)
+}
+
+// generateSolanaConsensusStateFixture generates a consensus state fixture for Solana
+func (s *CosmosRelayerTestSuite) generateSolanaConsensusStateFixture(ctx context.Context) {
+	s.T().Log("🔧 Generating ConsensusState fixture")
+	
+	// Query the consensus state from SimdA
+	resp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, s.SimdA, &clienttypes.QueryConsensusStateRequest{
+		ClientId:     ibctesting.FirstClientID,
+		RevisionNumber: 1,
+		RevisionHeight: 1,
+		LatestHeight:   true,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.ConsensusState)
+	
+	// Unmarshal the Tendermint consensus state
+	var tmConsensusState ibctmtypes.ConsensusState
+	err = proto.Unmarshal(resp.ConsensusState.Value, &tmConsensusState)
+	s.Require().NoError(err)
+	
+	// Convert to Solana format
+	solanaConsensusState := map[string]interface{}{
+		"timestamp":             tmConsensusState.Timestamp.UnixNano(),
+		"root":                  hex.EncodeToString(tmConsensusState.Root.GetHash()),
+		"next_validators_hash":  hex.EncodeToString(tmConsensusState.NextValidatorsHash),
+		"metadata": map[string]interface{}{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"source":       "real_cosmos_chain",
+			"description":  fmt.Sprintf("Consensus state captured from %s", s.SimdA.Config().ChainID),
+		},
+	}
+	
+	// Save to file
+	filename := filepath.Join(s.solanaFixtureDir, "consensus_state.json")
+	s.saveJsonFixture(filename, solanaConsensusState)
+	s.T().Logf("💾 Consensus state fixture saved: %s", filename)
+}
+
+// generateSolanaUpdateClientMessageFixture generates the update client message fixture for Solana
+func (s *CosmosRelayerTestSuite) generateSolanaUpdateClientMessageFixture(clientMessage *types.Any) {
+	s.T().Log("🔧 Generating UpdateClientMessage fixture")
+	
+	// The client message is already the protobuf-encoded header that Solana needs
+	headerBytes := clientMessage.Value
+	
+	// Create the fixture
+	updateClientMessage := map[string]interface{}{
+		"client_message_hex":    hex.EncodeToString(headerBytes),
+		"client_message_base64": hex.EncodeToString(headerBytes), // For now, same as hex
+		"client_message_bytes":  headerBytes,
+		"type_url":              clientMessage.TypeUrl,
+		"metadata": map[string]interface{}{
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"source":       "real_cosmos_chain",
+			"description":  "Protobuf-encoded Tendermint header for update client",
+		},
+	}
+	
+	// Save to file
+	filename := filepath.Join(s.solanaFixtureDir, "update_client_message.json")
+	s.saveJsonFixture(filename, updateClientMessage)
+	s.T().Logf("💾 Update client message fixture saved: %s", filename)
+}
+
+// saveJsonFixture saves a fixture as JSON
+func (s *CosmosRelayerTestSuite) saveJsonFixture(filename string, data interface{}) {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	s.Require().NoError(err)
+	
+	err = os.WriteFile(filename, jsonData, 0644)
+	s.Require().NoError(err)
 }
