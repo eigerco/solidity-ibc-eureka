@@ -1,10 +1,10 @@
 {
   "metadata": {
     "description": "Consensus state captured from simd-1",
-    "generated_at": "2025-07-15T15:22:51Z",
+    "generated_at": "2025-07-16T08:07:35Z",
     "source": "real_cosmos_chain"
   },
-  "next_validators_hash": "8cd0ff41a8a7c5f57730e7c3dd1b201cfa6ab650740530b8db166915aa5455de",
-  "root": "db6ad0d0df85e4613d2ae89e7bfd9b5f6f05c66879f0668ca47b76074941aac6",
-  "timestamp": 1752592922365419845
+  "next_validators_hash": "1960fbc35d8d28abbf09a0772d40f603a59838a935f7ecd6506a03f9af6069d8",
+  "root": "0ed3fa95268c9b9f77102f0779c6bf5af0504d657057709f530daf97dd3c0d16",
+  "timestamp": 1752653211505781752
 }

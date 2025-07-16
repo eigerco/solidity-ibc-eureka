@@ -12,8 +12,8 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
-	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/codec/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
@@ -21,6 +21,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
+	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
 )
 
 type SolanaFixtureGenerator struct {
@@ -38,7 +39,7 @@ func NewSolanaFixtureGenerator(s *suite.Suite) *SolanaFixtureGenerator {
 
 	if generator.Enabled {
 		// Create absolute path to avoid issues with directory changes
-		absPath, err := filepath.Abs(filepath.Join("..", "programs/solana/tests/fixtures/"))
+		absPath, err := filepath.Abs(filepath.Join("../..", testvalues.SolanaFixturesDir))
 		if err != nil {
 			s.T().Fatalf("Failed to get absolute path for fixtures: %v", err)
 		}
@@ -104,14 +105,14 @@ func (g *SolanaFixtureGenerator) generateClientStateFixture(ctx context.Context,
 
 	// Convert to Solana format
 	solanaClientState := map[string]interface{}{
-		"chain_id":                  tmClientState.ChainId,
-		"trust_level_numerator":     tmClientState.TrustLevel.Numerator,
-		"trust_level_denominator":   tmClientState.TrustLevel.Denominator,
-		"trusting_period":           tmClientState.TrustingPeriod.Seconds(),
-		"unbonding_period":          tmClientState.UnbondingPeriod.Seconds(),
-		"max_clock_drift":           tmClientState.MaxClockDrift.Seconds(),
-		"frozen_height":             tmClientState.FrozenHeight.RevisionHeight,
-		"latest_height":             tmClientState.LatestHeight.RevisionHeight,
+		"chain_id":                tmClientState.ChainId,
+		"trust_level_numerator":   tmClientState.TrustLevel.Numerator,
+		"trust_level_denominator": tmClientState.TrustLevel.Denominator,
+		"trusting_period":         tmClientState.TrustingPeriod.Seconds(),
+		"unbonding_period":        tmClientState.UnbondingPeriod.Seconds(),
+		"max_clock_drift":         tmClientState.MaxClockDrift.Seconds(),
+		"frozen_height":           tmClientState.FrozenHeight.RevisionHeight,
+		"latest_height":           tmClientState.LatestHeight.RevisionHeight,
 		"metadata": map[string]interface{}{
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
 			"source":       "real_cosmos_chain",
@@ -171,10 +172,10 @@ func (g *SolanaFixtureGenerator) generateUpdateClientMessageFixture(clientMessag
 
 	// Create the fixture
 	updateClientMessage := map[string]interface{}{
-		"client_message_hex":   hex.EncodeToString(headerBytes),
+		"client_message_hex":    hex.EncodeToString(headerBytes),
 		"client_message_base64": hex.EncodeToString(headerBytes), // For now, same as hex
-		"client_message_bytes": headerBytes,
-		"type_url":             clientMessage.TypeUrl,
+		"client_message_bytes":  headerBytes,
+		"type_url":              clientMessage.TypeUrl,
 		"metadata": map[string]interface{}{
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
 			"source":       "real_cosmos_chain",
