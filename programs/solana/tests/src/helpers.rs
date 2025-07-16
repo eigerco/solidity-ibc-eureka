@@ -11,9 +11,11 @@ use ibc_proto::ibc::lightclients::tendermint::v1::Header as RawHeader;
 use ibc_proto::ibc::lightclients::tendermint::v1::Misbehaviour as RawMisbehaviour;
 use ics07_tendermint::{ClientState, ConsensusState};
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use solana_system_interface::program as system_program;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use base64::prelude::*;
 
 pub struct TestEnv {
     pub payer: Rc<Keypair>,
@@ -219,4 +221,99 @@ pub fn create_test_misbehaviour_bytes() -> Vec<u8> {
         .encode(&mut buf)
         .expect("encoding should succeed");
     buf
+}
+
+// Fixture loading for real chain data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClientStateFixture {
+    chain_id: String,
+    trust_level_numerator: u64,
+    trust_level_denominator: u64,
+    trusting_period: u64,
+    unbonding_period: u64,
+    max_clock_drift: u64,
+    frozen_height: u64,
+    latest_height: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ConsensusStateFixture {
+    timestamp: u64,
+    root: String,           // hex string
+    next_validators_hash: String,  // hex string
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UpdateClientMessageFixture {
+    client_message_bytes: String,  // This is base64-encoded 
+    client_message_hex: String,
+    type_url: String,
+}
+
+/// Loads client state from fixture file
+pub fn load_client_state_from_fixture() -> ClientState {
+    let fixture_path = "fixtures/client_state.json";
+    let fixture_content = std::fs::read_to_string(fixture_path)
+        .expect("Failed to read client state fixture");
+    
+    let fixture: ClientStateFixture = serde_json::from_str(&fixture_content)
+        .expect("Failed to parse client state fixture");
+    
+    ClientState {
+        chain_id: fixture.chain_id,
+        trust_level_numerator: fixture.trust_level_numerator,
+        trust_level_denominator: fixture.trust_level_denominator,
+        trusting_period: fixture.trusting_period,
+        unbonding_period: fixture.unbonding_period,
+        max_clock_drift: fixture.max_clock_drift,
+        frozen_height: ics07_tendermint::types::IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.frozen_height,
+        },
+        latest_height: ics07_tendermint::types::IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.latest_height,
+        },
+    }
+}
+
+/// Loads consensus state from fixture file
+pub fn load_consensus_state_from_fixture() -> ConsensusState {
+    let fixture_path = "fixtures/consensus_state.json";
+    let fixture_content = std::fs::read_to_string(fixture_path)
+        .expect("Failed to read consensus state fixture");
+    
+    let fixture: ConsensusStateFixture = serde_json::from_str(&fixture_content)
+        .expect("Failed to parse consensus state fixture");
+    
+    // Convert hex strings to byte arrays
+    let root = hex::decode(&fixture.root)
+        .expect("Failed to decode root hex")
+        .try_into()
+        .expect("Root must be 32 bytes");
+    
+    let next_validators_hash = hex::decode(&fixture.next_validators_hash)
+        .expect("Failed to decode next_validators_hash hex")
+        .try_into()
+        .expect("Next validators hash must be 32 bytes");
+    
+    ConsensusState {
+        timestamp: fixture.timestamp,
+        root,
+        next_validators_hash,
+    }
+}
+
+/// Loads update client message from fixture file
+pub fn load_update_client_message_from_fixture() -> Vec<u8> {
+    let fixture_path = "fixtures/update_client_message.json";
+    let fixture_content = std::fs::read_to_string(fixture_path)
+        .expect("Failed to read update client message fixture");
+    
+    let fixture: UpdateClientMessageFixture = serde_json::from_str(&fixture_content)
+        .expect("Failed to parse update client message fixture");
+    
+    // Decode the base64 string to bytes
+    BASE64_STANDARD.decode(&fixture.client_message_bytes)
+        .expect("Failed to decode base64 client message bytes")
 }

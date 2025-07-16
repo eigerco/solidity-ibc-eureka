@@ -14,3 +14,6 @@ ibc-client-tendermint = { workspace = true }
 tendermint = { workspace = true }
 prost = { workspace = true }
 solana-system-interface = "1.0.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }

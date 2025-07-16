@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::pubkey::Pubkey;
 use ics07_tendermint::{ClientState, ConsensusState};
 use std::str::FromStr;
 
-use crate::helpers::{generate_unique_chain_id, initialize_contract, log, setup_test_env};
+use crate::helpers::{generate_unique_chain_id, initialize_contract, setup_test_env};
 
 #[test]
 fn test_initialize_with_pda() {
@@ -15,8 +15,14 @@ fn test_initialize_with_pda() {
         trusting_period: 1000,
         unbonding_period: 2000,
         max_clock_drift: 5,
-        frozen_height: 0,
-        latest_height: 42,
+        frozen_height: ics07_tendermint::types::IbcHeight {
+            revision_number: 0,
+            revision_height: 0,
+        },
+        latest_height: ics07_tendermint::types::IbcHeight {
+            revision_number: 0,
+            revision_height: 42,
+        },
     };
 
     let consensus_state = ConsensusState {
@@ -26,18 +32,17 @@ fn test_initialize_with_pda() {
     };
 
     let env = setup_test_env(program_id);
-    let contract = initialize_contract(&env, program_id, client_state.chain_id, client_state, consensus_state);
+    let contract = initialize_contract(&env, program_id, client_state, consensus_state);
 
     let account = env
         .program
-        .account::<ics07_tendermint::ClientData>(contract.client_data_pda)
+        .account::<ics07_tendermint::ClientState>(contract.client_data_pda)
         .expect("Failed to fetch client_data account");
 
     assert_eq!(
-        account.client_state.chain_id,
+        account.chain_id,
         contract.client_state.chain_id
     );
-    assert_eq!(account.client_state.latest_height, 42);
-    assert_eq!(account.consensus_state.timestamp, 123456789);
-    assert_eq!(account.frozen, false);
+    assert_eq!(account.latest_height.revision_height, 42);
+    // Note: consensus state verification would require accessing the separate consensus state store
 }

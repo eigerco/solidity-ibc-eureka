@@ -6459,12 +6459,15 @@ name = "tests"
 version = "0.1.0"
 dependencies = [
  "anchor-client",
+ "base64 0.22.1",
  "hex",
  "ibc-client-tendermint",
  "ibc-core-client-types",
  "ibc-proto",
  "ics07-tendermint",
  "prost",
+ "serde",
+ "serde_json",
  "solana-system-interface",
  "tendermint",
 ]
