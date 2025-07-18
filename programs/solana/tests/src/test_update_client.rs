@@ -50,17 +50,55 @@ fn test_update_client() {
         &env.program.id(),
     );
 
+    // Create the accounts and instruction structs to measure their sizes
+    let accounts_struct = ics07_tendermint::accounts::UpdateClient {
+        client_state: contract.client_data_pda,
+        trusted_consensus_state,
+        new_consensus_state_store,
+        payer: env.payer.pubkey(),
+        system_program: solana_system_interface::program::ID,
+    };
+
+    let instruction_struct = ics07_tendermint::instruction::UpdateClient {
+        msg: update_msg.clone(),
+    };
+
+    // Log sizes of entire transaction components
+    log(
+        &env,
+        &format!(
+            "📏 Complete accounts struct size: {} bytes",
+            std::mem::size_of_val(&accounts_struct)
+        ),
+    );
+    log(
+        &env,
+        &format!(
+            "📏 Complete instruction struct size: {} bytes",
+            std::mem::size_of_val(&instruction_struct)
+        ),
+    );
+    log(
+        &env,
+        &format!(
+            "📏 UpdateClient msg within instruction: {} bytes",
+            std::mem::size_of_val(&update_msg)
+        ),
+    );
+
+    log(
+        &env,
+        &format!(
+            "📏 client_message field size: {} bytes",
+            update_msg.client_message.len()
+        ),
+    );
+
     let update_result = env
         .program
         .request()
-        .accounts(ics07_tendermint::accounts::UpdateClient {
-            client_state: contract.client_data_pda,
-            trusted_consensus_state,
-            new_consensus_state_store,
-            payer: env.payer.pubkey(),
-            system_program: solana_system_interface::program::ID,
-        })
-        .args(ics07_tendermint::instruction::UpdateClient { msg: update_msg })
+        .accounts(accounts_struct)
+        .args(instruction_struct)
         .send();
 
     match update_result {
