@@ -19,8 +19,41 @@ fn test_update_client() {
     let env = setup_test_env(program_id);
     let contract = initialize_contract(&env, program_id, client_state, consensus_state);
 
+    let client_message_bytes = load_update_client_message_from_fixture();
+    log(&env, &format!("📏 Client message size: {} bytes", client_message_bytes.len()));
+    
+    // Test deserialization to verify the header is correctly formatted
+    log(&env, "🔍 Testing header deserialization...");
+    match ics07_tendermint::helpers::deserialize_header(&client_message_bytes) {
+        Ok(header) => {
+            log(&env, "✅ Header deserialization successful!");
+            log(&env, &format!("📊 Header trusted height: {}", header.trusted_height.revision_height()));
+            log(&env, &format!("📊 Header signed height: {}", header.signed_header.header.height.value()));
+            log(&env, &format!("📊 Header chain id: {}", header.signed_header.header.chain_id));
+            log(&env, &format!("📊 Header time: {:?}", header.signed_header.header.time));
+            log(&env, &format!("📊 Header last block id hash: {:?}", header.signed_header.header.last_block_id.as_ref().map(|bid| &bid.hash)));
+            log(&env, &format!("📊 Header last commit hash: {:?}", header.signed_header.header.last_commit_hash));
+            log(&env, &format!("📊 Header data hash: {:?}", header.signed_header.header.data_hash));
+            log(&env, &format!("📊 Header validators hash: {:?}", header.signed_header.header.validators_hash));
+            log(&env, &format!("📊 Header next validators hash: {:?}", header.signed_header.header.next_validators_hash));
+            log(&env, &format!("📊 Header consensus hash: {:?}", header.signed_header.header.consensus_hash));
+            log(&env, &format!("📊 Header app hash: {:?}", header.signed_header.header.app_hash));
+            log(&env, &format!("📊 Header last results hash: {:?}", header.signed_header.header.last_results_hash));
+            log(&env, &format!("📊 Header evidence hash: {:?}", header.signed_header.header.evidence_hash));
+            log(&env, &format!("📊 Header proposer address: {:?}", header.signed_header.header.proposer_address));
+            log(&env, &format!("📊 Header version: block={}, app={}", header.signed_header.header.version.block, header.signed_header.header.version.app));
+            log(&env, &format!("📊 Validator set size: {}", header.validator_set.validators().len()));
+            log(&env, &format!("📊 Trusted next validator set size: {}", header.trusted_next_validator_set.validators().len()));
+            log(&env, &format!("📊 Commit signatures count: {}", header.signed_header.commit.signatures.len()));
+        }
+        Err(e) => {
+            log(&env, &format!("❌ Header deserialization failed: {:?}", e));
+            panic!("Header deserialization failed, cannot proceed with test");
+        }
+    }
+
     let update_msg = UpdateClientMsg {
-        client_message: load_update_client_message_from_fixture(),
+        client_message: client_message_bytes.clone(),
     };
 
     // Get the client's current state to calculate the consensus state PDA
@@ -90,7 +123,7 @@ fn test_update_client() {
         &env,
         &format!(
             "📏 client_message field size: {} bytes",
-            update_msg.client_message.len()
+            client_message_bytes.len()
         ),
     );
 
