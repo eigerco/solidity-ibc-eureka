@@ -12,7 +12,7 @@ use ibc_proto::ibc::lightclients::tendermint::v1::Header as RawHeader;
 use ibc_proto::ibc::lightclients::tendermint::v1::Misbehaviour as RawMisbehaviour;
 use ics07_tendermint::{ClientState, ConsensusState};
 use prost::Message;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use solana_system_interface::program as system_program;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -223,7 +223,7 @@ pub fn create_test_misbehaviour_bytes() -> Vec<u8> {
     buf
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ClientStateFixture {
     chain_id: String,
     trust_level_numerator: u64,
@@ -235,17 +235,16 @@ struct ClientStateFixture {
     latest_height: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ConsensusStateFixture {
     timestamp: u64,
     root: String,                 // hex string
     next_validators_hash: String, // hex string
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct UpdateClientMessageFixture {
     client_message_bytes: String, // This is base64-encoded
-    type_url: String,
 }
 
 /// Loads client state from fixture file
