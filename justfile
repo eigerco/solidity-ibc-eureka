@@ -271,12 +271,6 @@ test-e2e-solana testname:
 # Run the Solana Anchor tests
 [group('test')]
 test-solana *ARGS:
-	@echo "Copying all files from target/deploy to programs/solana/target/deploy (overwriting if needed)"
-	if [ -n "$(ls -A target/deploy 2>/dev/null)" ]; then \
-		mkdir -p programs/solana/target/deploy; \
-		cp -f target/deploy/* programs/solana/target/deploy/; \
-		echo "✅ Copied all files from target/deploy to programs/solana/target/deploy/ (overwriting if needed)"; \
-	fi
 	@echo "Running Solana Anchor tests (anchor-nix preferred) ..."
 	if command -v anchor-nix >/dev/null 2>&1; then \
 		echo "🦀 Using anchor-nix"; \
