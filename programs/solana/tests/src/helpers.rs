@@ -245,7 +245,6 @@ struct ConsensusStateFixture {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UpdateClientMessageFixture {
     client_message_bytes: String, // This is base64-encoded
-    client_message_hex: String,
     type_url: String,
 }
 
