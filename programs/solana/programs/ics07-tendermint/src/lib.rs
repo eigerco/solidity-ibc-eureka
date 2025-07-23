@@ -19,7 +19,7 @@ pub use types::{
 };
 
 #[derive(Accounts)]
-#[instruction(chain_id: String, client_state: ClientState)]
+#[instruction(chain_id: String, latest_height: u64, client_state: ClientState)]
 pub struct Initialize<'info> {
     #[account(
         init,
@@ -33,7 +33,7 @@ pub struct Initialize<'info> {
         init,
         payer = payer,
         space = 8 + ConsensusStateStore::INIT_SPACE,
-        seeds = [b"consensus_state", client_state.key().as_ref(), &client_state.latest_height.revision_height.to_le_bytes()],
+        seeds = [b"consensus_state", client_state.key().as_ref(), &latest_height.to_le_bytes()],
         bump
     )]
     pub consensus_state_store: Account<'info, ConsensusStateStore>,
@@ -97,12 +97,16 @@ pub mod ics07_tendermint {
 
     pub fn initialize(
         ctx: Context<Initialize>,
-        _chain_id: String,
+        chain_id: String,
+        latest_height: u64,
         client_state: ClientState,
         consensus_state: ConsensusState,
     ) -> Result<()> {
         // NOTE: chain_id is used in the #[instruction] attribute for account validation
         // but the actual handler doesn't need it as it's embedded in client_state
+        assert_eq!(client_state.chain_id, chain_id);
+        assert_eq!(client_state.latest_height.revision_height, latest_height);
+
         instructions::initialize::initialize(ctx, client_state, consensus_state)
     }
 

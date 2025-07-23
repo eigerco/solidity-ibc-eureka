@@ -10,9 +10,10 @@ use base64::prelude::*;
 use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
 use ibc_proto::ibc::lightclients::tendermint::v1::Header as RawHeader;
 use ibc_proto::ibc::lightclients::tendermint::v1::Misbehaviour as RawMisbehaviour;
-use ics07_tendermint::{ClientState, ConsensusState};
+use ics07_tendermint::types::IbcHeight;
+use ics07_tendermint::{ClientState, ConsensusState, MembershipMsg};
 use prost::Message;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use solana_system_interface::program as system_program;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -128,29 +129,60 @@ pub fn initialize_contract(
     );
     log(env, &format!("📍 Client data PDA: {}", client_data_pda));
 
-    // Calculate the consensus state store PDA for the initial height (0)
-    let (consensus_state_store, _bump) = Pubkey::find_program_address(
+    // Calculate the consensus state store PDA
+    // Use the client state's latest height - this allows initializing at any blockchain height
+    let consensus_height = client_state.latest_height.revision_height;
+    let (consensus_state_store_pda, _bump) = Pubkey::find_program_address(
         &[
             b"consensus_state",
             client_data_pda.as_ref(),
-            &0u64.to_le_bytes(), // Initial height is 0 in our test client state
+            &consensus_height.to_le_bytes(),
         ],
         &env.program.id(),
     );
 
     let chain_id = client_state.chain_id.clone();
+
+    log(env, &format!("🔍 Chain ID: {}", chain_id));
+    log(
+        env,
+        &format!("🔍 Chain ID bytes: {:?}", chain_id.as_bytes()),
+    );
+    log(
+        env,
+        &format!(
+            "🔍 Instruction client_state height: {}",
+            client_state.latest_height.revision_height
+        ),
+    );
+    log(
+        env,
+        &format!(
+            "🔍 Height bytes: {:?}",
+            client_state.latest_height.revision_height.to_le_bytes()
+        ),
+    );
+    log(
+        env,
+        &format!(
+            "🔍 consensus_state_store PDA: {}",
+            consensus_state_store_pda
+        ),
+    );
+
     // Build and send the initialize instruction
     let instruction = env
         .program
         .request()
         .args(ics07_tendermint::instruction::Initialize {
-            _chain_id: chain_id,
+            chain_id: chain_id,
             client_state: client_state.clone(),
+            latest_height: consensus_height, // Initialize at the client state's latest height
             consensus_state: consensus_state.clone(),
         })
         .accounts(ics07_tendermint::accounts::Initialize {
             client_state: client_data_pda,
-            consensus_state_store,
+            consensus_state_store: consensus_state_store_pda,
             payer: env.payer.pubkey(),
             system_program: system_program::ID,
         })
@@ -223,7 +255,7 @@ pub fn create_test_misbehaviour_bytes() -> Vec<u8> {
     buf
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClientStateFixture {
     chain_id: String,
     trust_level_numerator: u64,
@@ -235,7 +267,7 @@ struct ClientStateFixture {
     latest_height: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ConsensusStateFixture {
     timestamp: u64,
     root: String,                 // hex string
