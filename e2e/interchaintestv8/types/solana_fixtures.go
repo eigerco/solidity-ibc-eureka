@@ -248,13 +248,27 @@ func (g *SolanaFixtureGenerator) generateMembershipFixture(ctx context.Context, 
 	// Get the current height of the chain we're querying
 	currentHeight, err := chainA.Height(ctx)
 	if err != nil {
-		g.suite.T().Logf("⚠️ Failed to get current height: %v", err)
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to get current chain height: %v", err)
+	}
+	
+	g.suite.T().Logf("🔍 Client state height: %d, Current chain height: %d", height, currentHeight)
+	
+	// Validate height is reasonable
+	if height == 0 {
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Invalid height 0 in client state")
+	}
+	
+	// Use current height if it's higher (ensures data exists)
+	if currentHeight > int64(height) {
+		g.suite.T().Logf("📍 Using current chain height %d instead of client state height %d for proof generation", currentHeight, height)
+		height = uint64(currentHeight)
 	} else {
-		g.suite.T().Logf("🔍 Client state height: %d, Current chain height: %d", height, currentHeight)
-		// Use current height if it's higher
-		if currentHeight > int64(height) {
-			height = uint64(currentHeight)
-		}
+		g.suite.T().Logf("📍 Using client state height %d (current chain height: %d)", height, currentHeight)
+	}
+	
+	// Validate the selected height is not too far in the future
+	if height > uint64(currentHeight)+100 {
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Selected height %d is too far in future (current: %d)", height, currentHeight)
 	}
 	
 	// IMPORTANT: Update client state latest_height to match proof height for validation
@@ -283,22 +297,43 @@ func (g *SolanaFixtureGenerator) generateMembershipFixture(ctx context.Context, 
 		// For membership, query an existing path
 		value, proofBytes, err = g.queryPathWithProof(ctx, chainA, keyPath, int64(height))
 		if err != nil {
-			g.suite.T().Logf("⚠️ Failed to query existing path %s: %v", keyPath, err)
-			// If path doesn't exist, create empty value (this becomes a non-membership test)
-			value = []byte{}
-			proofBytes = []byte{}
-			expectExists = false
+			g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to query membership path %s at height %d: %v", keyPath, height, err)
 		}
+		if len(value) == 0 {
+			g.suite.T().Fatalf("❌ CRITICAL ERROR: Expected membership path %s to exist at height %d but got empty value", keyPath, height)
+		}
+		if len(proofBytes) == 0 {
+			g.suite.T().Fatalf("❌ CRITICAL ERROR: Got empty proof for membership path %s at height %d", keyPath, height)
+		}
+		g.suite.T().Logf("✅ Successfully queried membership path: value_len=%d, proof_len=%d", len(value), len(proofBytes))
 	} else {
 		// For non-membership, query a non-existent path
 		value, proofBytes, err = g.queryPathWithProof(ctx, chainA, keyPath, int64(height))
-		if err != nil || len(value) == 0 {
-			// Expected for non-membership
-			value = []byte{}
+		if err != nil {
+			// Some errors are expected for non-membership (e.g., key not found)
+			if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "does not exist") {
+				g.suite.T().Fatalf("❌ CRITICAL ERROR: Unexpected error querying non-membership path %s at height %d: %v", keyPath, height, err)
+			}
+			g.suite.T().Logf("✅ Expected error for non-membership path: %v", err)
+		}
+		// For non-membership, empty value is expected
+		if len(value) > 0 {
+			g.suite.T().Fatalf("❌ CRITICAL ERROR: Expected non-membership path %s to not exist but got value of length %d", keyPath, len(value))
+		}
+		// Ensure we still have a proof for non-existence
+		if len(proofBytes) == 0 {
+			g.suite.T().Logf("⚠️ Warning: Empty proof for non-membership path %s - setting empty proof", keyPath)
 			proofBytes = []byte{}
 		}
+		value = []byte{} // Ensure empty value for non-membership
+		g.suite.T().Logf("✅ Successfully verified non-membership path: value is empty, proof_len=%d", len(proofBytes))
 	}
 
+	// Validate data before creating the message
+	if keyPath == "" {
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Empty keyPath provided")
+	}
+	
 	// Create the membership message
 	membershipMsg := map[string]interface{}{
 		"height":             height,
@@ -308,6 +343,14 @@ func (g *SolanaFixtureGenerator) generateMembershipFixture(ctx context.Context, 
 		"path":               hex.EncodeToString([]byte(keyPath)),
 		"value":              hex.EncodeToString(value),
 	}
+	
+	// Log the generated data for debugging
+	g.suite.T().Logf("📦 Generated membership fixture:")
+	g.suite.T().Logf("  - Type: %s", g.getMembershipDescription(keyPath, expectExists))
+	g.suite.T().Logf("  - Height: %d", height)
+	g.suite.T().Logf("  - Path: %s", keyPath)
+	g.suite.T().Logf("  - Value length: %d bytes", len(value))
+	g.suite.T().Logf("  - Proof length: %d bytes", len(proofBytes))
 
 	// Create the complete fixture using updated client state and consensus state
 	fixture := map[string]interface{}{
@@ -364,14 +407,18 @@ func (g *SolanaFixtureGenerator) queryPathWithProof(ctx context.Context, chainA 
 	g.suite.T().Logf("📊 Query result: height=%d, value_len=%d, has_proof=%t",
 		queryRes.Height, len(queryRes.Value), queryRes.ProofOps != nil)
 
-	// Handle case where path doesn't exist (non-membership)
+	// Log query result status
 	if len(queryRes.Value) == 0 {
-		g.suite.T().Logf("⚠️ Path %s does not exist - this will be a non-membership proof", keyPath)
+		g.suite.T().Logf("💭 Path %s does not exist at height %d - empty value returned", keyPath, proofHeight)
+	} else {
+		g.suite.T().Logf("✅ Path %s exists at height %d with %d bytes of data", keyPath, proofHeight, len(queryRes.Value))
 	}
 
 	// Convert Tendermint proof to ICS commitment proof format
 	var proofBytes []byte
 	if queryRes.ProofOps != nil && len(queryRes.ProofOps.Ops) > 0 {
+		g.suite.T().Logf("🔄 Converting Tendermint proof with %d operations", len(queryRes.ProofOps.Ops))
+		
 		merkleProof, err := g.convertTendermintProofOpsToICS(queryRes.ProofOps.Ops)
 		if err != nil {
 			return nil, nil, g.wrapError(err, "proof_conversion", map[string]interface{}{
@@ -379,6 +426,11 @@ func (g *SolanaFixtureGenerator) queryPathWithProof(ctx context.Context, chainA 
 				"height":    proofHeight,
 				"ops_count": len(queryRes.ProofOps.Ops),
 			})
+		}
+		
+		// Validate the converted proof
+		if len(merkleProof.Proofs) == 0 {
+			return nil, nil, fmt.Errorf("proof conversion resulted in zero commitment proofs for path %s", keyPath)
 		}
 
 		proofBytes, err = proto.Marshal(merkleProof)
@@ -388,11 +440,20 @@ func (g *SolanaFixtureGenerator) queryPathWithProof(ctx context.Context, chainA 
 				"proofs_count": len(merkleProof.Proofs),
 			})
 		}
+		
+		// Validate marshaled proof
+		if len(proofBytes) == 0 {
+			return nil, nil, fmt.Errorf("proof marshaling resulted in empty bytes for path %s", keyPath)
+		}
 
 		g.suite.T().Logf("✅ Generated proof with %d commitment proofs, total size: %d bytes",
 			len(merkleProof.Proofs), len(proofBytes))
 	} else {
-		g.suite.T().Logf("⚠️ No proof returned from query")
+		// Only allow empty proofs for non-membership cases
+		if len(queryRes.Value) > 0 {
+			return nil, nil, fmt.Errorf("expected proof for existing value at path %s but got no ProofOps", keyPath)
+		}
+		g.suite.T().Logf("💭 No proof returned from query (expected for non-membership)")
 		proofBytes = []byte{}
 	}
 
@@ -498,6 +559,11 @@ func (g *SolanaFixtureGenerator) getMembershipDescription(keyPath string, expect
 // parseIBCPath parses an IBC path and returns the store name and key bytes
 // Example: "clients/07-tendermint-0/clientState" -> store="ibc", key="clients/07-tendermint-0/clientState"
 func (g *SolanaFixtureGenerator) parseIBCPath(keyPath string) (string, []byte, error) {
+	// Validate input
+	if keyPath == "" {
+		return "", nil, fmt.Errorf("empty keyPath provided")
+	}
+	
 	// All IBC paths use the "ibc" store in Cosmos SDK
 	store := "ibc"
 
@@ -508,8 +574,13 @@ func (g *SolanaFixtureGenerator) parseIBCPath(keyPath string) (string, []byte, e
 
 	// The key is the path itself as bytes
 	key := []byte(keyPath)
+	
+	// Validate key is not empty
+	if len(key) == 0 {
+		return "", nil, fmt.Errorf("keyPath resulted in empty key bytes")
+	}
 
-	g.suite.T().Logf("📝 Parsed IBC path: store=%s, key=%s", store, keyPath)
+	g.suite.T().Logf("📝 Parsed IBC path: store=%s, key=%s, key_len=%d", store, keyPath, len(key))
 	return store, key, nil
 }
 
@@ -530,12 +601,14 @@ func (g *SolanaFixtureGenerator) isValidIBCPath(path string) bool {
 
 	for _, prefix := range validPrefixes {
 		if strings.HasPrefix(path, prefix) {
+			g.suite.T().Logf("✅ Path %s matches valid IBC prefix: %s", path, prefix)
 			return true
 		}
 	}
 
-	g.suite.T().Logf("⚠️ Path %s doesn't match known IBC prefixes, proceeding anyway", path)
-	return true // Allow unknown paths for flexibility
+	// Be more strict - don't allow unknown paths as they might be mistakes
+	g.suite.T().Logf("❌ Path %s doesn't match any known IBC prefixes: %v", path, validPrefixes)
+	return false
 }
 
 // convertTendermintProofOpsToICS converts Tendermint ProofOps to an ICS commitment MerkleProof
