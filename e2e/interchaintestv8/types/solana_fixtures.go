@@ -266,11 +266,13 @@ func (g *SolanaFixtureGenerator) generateMembershipFixture(ctx context.Context, 
 	}
 	updatedClientState["latest_height"] = height
 	
-	// Get consensus state at the proof height - this is crucial for verification
-	updatedConsensusState := g.getConsensusStateAtHeight(ctx, chainA, height)
+	// CRITICAL FIX: For membership verification, we need the consensus state that matches
+	// the blockchain state where the proof was generated, NOT the IBC light client's
+	// stored consensus state. The proof is generated against the blockchain's app hash
+	// at the specific height, so we must use the blockchain's app hash for verification.
+	updatedConsensusState := g.getBlockchainConsensusStateAtHeight(ctx, chainA, height)
 	if updatedConsensusState == nil {
-		g.suite.T().Logf("⚠️ Could not get consensus state at height %d, using original consensus state", height)
-		updatedConsensusState = consensusState
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Could not get blockchain consensus state at height %d", height)
 	}
 
 	// Query the path from the chain
@@ -619,6 +621,33 @@ func (g *SolanaFixtureGenerator) getAppHashAtHeight(ctx context.Context, chainA 
 	return appHash, nil
 }
 
+// getBlockchainConsensusStateAtHeight gets the consensus state using blockchain data at a specific height
+// This is used for membership verification where the proof is generated against blockchain state
+func (g *SolanaFixtureGenerator) getBlockchainConsensusStateAtHeight(ctx context.Context, chainA *cosmos.CosmosChain, height uint64) map[string]interface{} {
+	g.suite.T().Logf("🔍 Getting BLOCKCHAIN consensus state at height %d", height)
+	
+	// Get app hash at the proof height
+	appHash, err := g.getAppHashAtHeight(ctx, chainA, int64(height))
+	if err != nil {
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to get app hash at height %d: %v", height, err)
+	}
+	
+	// Get block header for timestamp and next validators hash
+	blockRes, err := chainA.Nodes()[0].Client.Block(ctx, ptr(int64(height)))
+	if err != nil {
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to get block at height %d: %v", height, err)
+	}
+	
+	g.suite.T().Logf("✅ Created blockchain consensus state at height %d with app hash: %s", height, appHash)
+	
+	// Return a consensus state constructed from blockchain data
+	return map[string]interface{}{
+		"timestamp":            blockRes.Block.Header.Time.UnixNano(),
+		"root":                 appHash,
+		"next_validators_hash": hex.EncodeToString(blockRes.Block.Header.NextValidatorsHash),
+	}
+}
+
 // getConsensusStateAtHeight gets the consensus state at a specific height
 func (g *SolanaFixtureGenerator) getConsensusStateAtHeight(ctx context.Context, chainA *cosmos.CosmosChain, height uint64) map[string]interface{} {
 	g.suite.T().Logf("🔍 Getting consensus state at height %d", height)
@@ -644,20 +673,18 @@ func (g *SolanaFixtureGenerator) getConsensusStateAtHeight(ctx context.Context, 
 	}
 	
 	// If IBC consensus state doesn't exist at this height, construct one from blockchain data
-	g.suite.T().Logf("⚠️ No IBC consensus state at height %d, constructing from blockchain data", height)
+	g.suite.T().Logf("🔧 No IBC consensus state at height %d, constructing from blockchain data (this is expected for membership verification)", height)
 	
 	// Get app hash at the proof height
 	appHash, err := g.getAppHashAtHeight(ctx, chainA, int64(height))
 	if err != nil {
-		g.suite.T().Logf("⚠️ Failed to get app hash at height %d: %v", height, err)
-		return nil
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to get app hash at height %d: %v", height, err)
 	}
 	
 	// Get block header for timestamp and next validators hash
 	blockRes, err := chainA.Nodes()[0].Client.Block(ctx, ptr(int64(height)))
 	if err != nil {
-		g.suite.T().Logf("⚠️ Failed to get block at height %d: %v", height, err)
-		return nil
+		g.suite.T().Fatalf("❌ CRITICAL ERROR: Failed to get block at height %d: %v", height, err)
 	}
 	
 	// Return a consensus state constructed from blockchain data
