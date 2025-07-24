@@ -35,6 +35,13 @@ impl ClientState {
     pub fn freeze(&mut self) {
         self.frozen_height = self.latest_height;
     }
+    
+    /// Returns the client key for PDA derivation.
+    /// In this implementation, we use the chain_id as the client key.
+    /// This matches the Initialize instruction parameter.
+    pub fn key(&self) -> &str {
+        &self.chain_id
+    }
 }
 
 #[derive(

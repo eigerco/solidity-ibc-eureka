@@ -1,0 +1,33 @@
+{
+  "client_state": {
+    "chain_id": "simd-2",
+    "frozen_height": 0,
+    "latest_height": 47,
+    "max_clock_drift": 15,
+    "trust_level_denominator": 3,
+    "trust_level_numerator": 1,
+    "trusting_period": 1209600,
+    "unbonding_period": 1814400
+  },
+  "consensus_state": {
+    "next_validators_hash": "7fc085fcf31eaf3ffca8b16030b8d8e1c1295ab656d8760775eaed65c0571d60",
+    "root": "c289af68f632fdda23b576bea0f63b247959c3c82b0dd975f8900ff4640ea22e",
+    "timestamp": 1753350256984529209
+  },
+  "expected_result": "success",
+  "membership_msg": {
+    "delay_block_period": 0,
+    "delay_time_period": 0,
+    "height": 47,
+    "path": "636c69656e74732f30372d74656e6465726d696e742d302f636c69656e7453746174655f6e6f6e6578697374656e74",
+    "proof": "",
+    "value": ""
+  },
+  "metadata": {
+    "description": "Non-membership verification fixture for path: clients/07-tendermint-0/clientState_nonexistent",
+    "generated_at": "2025-07-24T09:44:19Z",
+    "height": 47,
+    "key_path": "clients/07-tendermint-0/clientState_nonexistent",
+    "source": "real_cosmos_chain"
+  }
+}

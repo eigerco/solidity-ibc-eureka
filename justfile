@@ -146,8 +146,12 @@ generate-ethereum-types:
 # Generate the fixtures for the Solana tests using the e2e tests
 [group('generate')]
 generate-fixtures-solana: clean-foundry install-relayer
-	@echo "Generating Solana fixtures... This may take a while."
-	cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m
+	# @echo "Generating Solana fixtures... This may take a while."
+	# @echo "Generating basic client state, consensus state, and update client fixtures..."
+	# cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m
+	# @echo "Generating membership and non-membership verification fixtures..."
+	cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_SolanaMembership$' -timeout 40m
+	@echo "Generating misbehaviour detection fixtures..."
 
 # Generate the fixtures for the Solidity tests using the e2e tests
 [group('generate')]

@@ -26,14 +26,15 @@ import (
 
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
+	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/chainconfig"
 	cosmosutils "github.com/srdtrk/solidity-ibc-eureka/e2e/v8/cosmos"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/relayer"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
-	relayertypes "github.com/srdtrk/solidity-ibc-eureka/e2e/v8/types/relayer"
 	e2etypes "github.com/srdtrk/solidity-ibc-eureka/e2e/v8/types"
+	relayertypes "github.com/srdtrk/solidity-ibc-eureka/e2e/v8/types/relayer"
 )
 
 // CosmosRelayerTestSuite is a struct that holds the test suite for two Cosmos chains.
@@ -47,7 +48,7 @@ type CosmosRelayerTestSuite struct {
 	SimdBSubmitter ibc.Wallet
 
 	RelayerClient relayertypes.RelayerServiceClient
-	
+
 	// Fixture generation
 	SolanaFixtures *e2etypes.SolanaFixtureGenerator
 }
@@ -570,7 +571,7 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().Empty(resp.Address)
 
 			updateTxBodyBz = resp.Tx
-			
+
 			// Generate Solana fixtures if enabled
 			s.SolanaFixtures.GenerateFixturesFromUpdateTx(ctx, updateTxBodyBz, s.SimdA)
 		}))
@@ -591,5 +592,55 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().NoError(err)
 			s.Require().Greater(tmClientState.LatestHeight.RevisionHeight, initialHeight)
 		}))
+	}))
+}
+
+func (s *CosmosRelayerTestSuite) Test_SolanaMembership() {
+	ctx := context.Background()
+	s.SetupSuite(ctx)
+
+	// Wait for more blocks to ensure client states are properly committed to storage
+	s.Require().NoError(testutil.WaitForBlocks(ctx, 10, s.SimdA, s.SimdB))
+
+	s.Require().True(s.Run("Generate Solana membership fixtures", func() {
+		// Verify the client state exists and get its details
+		clientResp, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, s.SimdA, &clienttypes.QueryClientStateRequest{
+			ClientId: ibctesting.FirstClientID,
+		})
+		s.Require().NoError(err)
+		s.Require().NotNil(clientResp.ClientState)
+		s.T().Logf("✅ Client state found with type: %s", clientResp.ClientState.TypeUrl)
+
+		var tmClientState ibctmtypes.ClientState
+		err = proto.Unmarshal(clientResp.ClientState.Value, &tmClientState)
+		s.Require().NoError(err)
+		s.T().Logf("📊 Client state - Chain ID: %s, Latest Height: %s", tmClientState.ChainId, tmClientState.LatestHeight.String())
+
+		// Verify consensus state exists 
+		consensusResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, s.SimdA, &clienttypes.QueryConsensusStateRequest{
+			ClientId:       ibctesting.FirstClientID,
+			RevisionNumber: tmClientState.LatestHeight.RevisionNumber,
+			RevisionHeight: tmClientState.LatestHeight.RevisionHeight,
+		})
+		s.Require().NoError(err)
+		s.Require().NotNil(consensusResp.ConsensusState)
+		s.T().Logf("✅ Consensus state found with type: %s", consensusResp.ConsensusState.TypeUrl)
+
+		// Generate the correct consensus state path using the actual latest height
+		consensusStatePath := "clients/07-tendermint-0/consensusStates/" + 
+			tmClientState.LatestHeight.String()
+
+		s.T().Logf("🔍 Using paths:")
+		s.T().Logf("  - Client state: clients/07-tendermint-0/clientState")
+		s.T().Logf("  - Consensus state: %s", consensusStatePath)
+
+		// Define key paths for membership testing
+		keyPaths := []string{
+			"clients/07-tendermint-0/clientState",
+			consensusStatePath,
+		}
+
+		// Generate membership fixtures
+		s.SolanaFixtures.GenerateMembershipFixtures(ctx, s.SimdA, keyPaths)
 	}))
 }

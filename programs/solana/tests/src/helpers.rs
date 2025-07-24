@@ -347,3 +347,145 @@ pub fn load_update_client_message_from_fixture() -> Vec<u8> {
         .decode(&fixture.client_message_bytes)
         .expect("Failed to decode base64 client message bytes")
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MembershipFixture {
+    client_state: ClientStateFixture,
+    consensus_state: ConsensusStateFixture,
+    membership_msg: MembershipMsgFixture,
+    expected_result: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MembershipMsgFixture {
+    height: u64,
+    delay_time_period: u64,
+    delay_block_period: u64,
+    proof: String, // hex string
+    path: String,  // hex string
+    value: String, // hex string
+}
+
+/// Loads membership message from fixture file
+pub fn load_membership_fixture_from_file(
+    fixture_index: usize,
+) -> (ClientState, ConsensusState, MembershipMsg) {
+    let fixture_path = format!("fixtures/membership_{}.json", fixture_index);
+    let fixture_content = std::fs::read_to_string(&fixture_path).expect(&format!(
+        "Failed to read membership fixture: {}",
+        fixture_path
+    ));
+
+    let fixture: MembershipFixture =
+        serde_json::from_str(&fixture_content).expect("Failed to parse membership fixture");
+
+    // Debug the fixture values before decoding
+    println!("🔍 Debug: Raw fixture values:");
+    println!("   - Raw value string: '{}'", fixture.membership_msg.value);
+    println!("   - Raw path string: '{}'", fixture.membership_msg.path);
+    println!("   - Raw proof length: {}", fixture.membership_msg.proof.len());
+
+    let client_state = ClientState {
+        chain_id: fixture.client_state.chain_id,
+        trust_level_numerator: fixture.client_state.trust_level_numerator,
+        trust_level_denominator: fixture.client_state.trust_level_denominator,
+        trusting_period: fixture.client_state.trusting_period,
+        unbonding_period: fixture.client_state.unbonding_period,
+        max_clock_drift: fixture.client_state.max_clock_drift,
+        frozen_height: IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.client_state.frozen_height,
+        },
+        latest_height: IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.client_state.latest_height,
+        },
+    };
+
+    let consensus_state = ConsensusState {
+        timestamp: fixture.consensus_state.timestamp,
+        root: hex::decode(&fixture.consensus_state.root)
+            .expect("Failed to decode root hex")
+            .try_into()
+            .expect("Root must be 32 bytes"),
+        next_validators_hash: hex::decode(&fixture.consensus_state.next_validators_hash)
+            .expect("Failed to decode next_validators_hash hex")
+            .try_into()
+            .expect("Next validators hash must be 32 bytes"),
+    };
+
+    let membership_msg = MembershipMsg {
+        height: fixture.membership_msg.height,
+        delay_time_period: fixture.membership_msg.delay_time_period,
+        delay_block_period: fixture.membership_msg.delay_block_period,
+        proof: hex::decode(&fixture.membership_msg.proof).expect("Failed to decode proof hex"),
+        path: {
+            let path_bytes =
+                hex::decode(&fixture.membership_msg.path).expect("Failed to decode path hex");
+            // Cosmos SDK merkle path: [store_key, substore_key] - matches Solidity test format
+            vec![b"ibc".to_vec(), path_bytes]
+        },
+        value: hex::decode(&fixture.membership_msg.value).expect("Failed to decode value hex"),
+    };
+
+    (client_state, consensus_state, membership_msg)
+}
+
+/// Loads non-membership message from fixture file
+pub fn load_non_membership_fixture_from_file(
+    fixture_index: usize,
+) -> (ClientState, ConsensusState, MembershipMsg) {
+    let fixture_path = format!("fixtures/non_membership_{}.json", fixture_index);
+    let fixture_content = std::fs::read_to_string(&fixture_path).expect(&format!(
+        "Failed to read non-membership fixture: {}",
+        fixture_path
+    ));
+
+    let fixture: MembershipFixture =
+        serde_json::from_str(&fixture_content).expect("Failed to parse non-membership fixture");
+
+    let client_state = ClientState {
+        chain_id: fixture.client_state.chain_id,
+        trust_level_numerator: fixture.client_state.trust_level_numerator,
+        trust_level_denominator: fixture.client_state.trust_level_denominator,
+        trusting_period: fixture.client_state.trusting_period,
+        unbonding_period: fixture.client_state.unbonding_period,
+        max_clock_drift: fixture.client_state.max_clock_drift,
+        frozen_height: IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.client_state.frozen_height,
+        },
+        latest_height: IbcHeight {
+            revision_number: 0,
+            revision_height: fixture.client_state.latest_height,
+        },
+    };
+
+    let consensus_state = ConsensusState {
+        timestamp: fixture.consensus_state.timestamp,
+        root: hex::decode(&fixture.consensus_state.root)
+            .expect("Failed to decode root hex")
+            .try_into()
+            .expect("Root must be 32 bytes"),
+        next_validators_hash: hex::decode(&fixture.consensus_state.next_validators_hash)
+            .expect("Failed to decode next_validators_hash hex")
+            .try_into()
+            .expect("Next validators hash must be 32 bytes"),
+    };
+
+    let membership_msg = MembershipMsg {
+        height: fixture.membership_msg.height,
+        delay_time_period: fixture.membership_msg.delay_time_period,
+        delay_block_period: fixture.membership_msg.delay_block_period,
+        proof: hex::decode(&fixture.membership_msg.proof).expect("Failed to decode proof hex"),
+        path: {
+            let path_bytes =
+                hex::decode(&fixture.membership_msg.path).expect("Failed to decode path hex");
+            // Cosmos SDK merkle path: [store_key, substore_key] - matches Solidity test format
+            vec![b"ibc".to_vec(), path_bytes]
+        },
+        value: hex::decode(&fixture.membership_msg.value).expect("Failed to decode value hex"),
+    };
+
+    (client_state, consensus_state, membership_msg)
+}
