@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"os"
 	"testing"
@@ -398,6 +399,7 @@ func (s *CosmosRelayerTestSuite) Test_10_FilteredICS20TimeoutPacket() {
 	s.FilteredICS20TimeoutPacketTest(ctx, 10, []uint64{1})
 }
 
+
 func (s *CosmosRelayerTestSuite) FilteredICS20TimeoutPacketTest(ctx context.Context, numOfTransfers int, timeoutFilter []uint64) {
 	s.Require().Greater(numOfTransfers, len(timeoutFilter))
 
@@ -579,6 +581,73 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			_ = s.MustBroadcastSdkTxBody(ctx, s.SimdA, s.SimdASubmitter, 2_000_000, updateTxBodyBz)
 		}))
 
+		// Generate membership verification fixtures if enabled
+		s.Require().True(s.Run("Generate membership fixtures", func() {
+			if !s.SolanaFixtures.Enabled {
+				s.T().Skip("Skipping membership fixture generation (GENERATE_SOLANA_FIXTURES not set)")
+				return
+			}
+
+			s.T().Log("🔧 Generating membership verification fixtures")
+
+			// Send a test packet to have something to prove membership for
+			simdAUser, simdBUser := s.CosmosUsers[0], s.CosmosUsers[1]
+			transferAmount := int64(1000000)
+			transferPayload := transfertypes.FungibleTokenPacketData{
+				Denom:    s.SimdA.Config().Denom,
+				Amount:   fmt.Sprintf("%d", transferAmount),
+				Sender:   simdAUser.FormattedAddress(),
+				Receiver: simdBUser.FormattedAddress(),
+				Memo:     "",
+			}
+
+			now := time.Now()
+			timeout := uint64(now.Add(30 * time.Minute).Unix())
+
+			payload := channeltypesv2.Payload{
+				SourcePort:      transfertypes.PortID,
+				DestinationPort: transfertypes.PortID,
+				Version:         transfertypes.V1,
+				Encoding:        transfertypes.EncodingJSON,
+				Value:           transferPayload.GetBytes(),
+			}
+
+			packet := channeltypesv2.Packet{
+				Sequence:           1,
+				SourceClient:       ibctesting.FirstClientID,
+				DestinationClient:  ibctesting.FirstClientID,
+				TimeoutTimestamp:   timeout,
+				Payloads:           []channeltypesv2.Payload{payload},
+			}
+
+			msgSendPacket := channeltypesv2.MsgSendPacket{
+				SourceClient:     packet.SourceClient,
+				TimeoutTimestamp: packet.TimeoutTimestamp,
+				Payloads:         packet.Payloads,
+				Signer:           simdAUser.FormattedAddress(),
+			}
+
+			resp, err := s.BroadcastMessages(ctx, s.SimdA, simdAUser, 200_000, &msgSendPacket)
+			s.Require().NoError(err)
+			s.Require().NotEmpty(resp.TxHash)
+
+			// Wait for the packet commitment to be available
+			s.T().Log("🔍 Waiting for packet commitment to be available...")
+			commitmentResp := s.waitForPacketCommitment(ctx, s.SimdA, ibctesting.FirstClientID, 1, 60*time.Second)
+			if commitmentResp == nil {
+				s.T().Log("⚠️  Packet commitment not found within timeout, skipping membership fixture generation")
+				return
+			}
+
+			s.T().Logf("🔍 Commitment found: %x", commitmentResp.Commitment)
+			s.T().Logf("🔍 Proof length: %d", len(commitmentResp.Proof))
+			s.T().Logf("🔍 Proof height: %d", commitmentResp.ProofHeight.RevisionHeight)
+
+			// Generate membership verification fixtures
+			packet.Sequence = 1
+			s.SolanaFixtures.GenerateMembershipVerificationScenarios(ctx, s.SimdA, packet)
+		}))
+
 		s.Require().True(s.Run("Verify client update on Chain A", func() {
 			resp, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, s.SimdA, &clienttypes.QueryClientStateRequest{
 				ClientId: ibctesting.FirstClientID,
@@ -592,4 +661,37 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().Greater(tmClientState.LatestHeight.RevisionHeight, initialHeight)
 		}))
 	}))
+}
+
+// waitForPacketCommitment waits for a packet commitment to be available with the specified timeout
+func (s *CosmosRelayerTestSuite) waitForPacketCommitment(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, timeout time.Duration) *channeltypesv2.QueryPacketCommitmentResponse {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	
+	timeoutTimer := time.NewTimer(timeout)
+	defer timeoutTimer.Stop()
+
+	for {
+		select {
+		case <-timeoutTimer.C:
+			s.T().Logf("⏰ Timeout waiting for packet commitment (sequence: %d)", sequence)
+			return nil
+		case <-ticker.C:
+			resp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chain, &channeltypesv2.QueryPacketCommitmentRequest{
+				ClientId: clientId,
+				Sequence: sequence,
+			})
+			if err == nil && resp.Commitment != nil && len(resp.Proof) > 0 {
+				s.T().Logf("✅ Found packet commitment with proof for sequence %d (proof length: %d)", sequence, len(resp.Proof))
+				return resp
+			}
+			if err != nil {
+				s.T().Logf("🔄 Checking for packet commitment (sequence: %d): %v", sequence, err)
+			} else if resp.Commitment == nil {
+				s.T().Logf("🔄 Packet commitment found but nil for sequence: %d", sequence)
+			} else if len(resp.Proof) == 0 {
+				s.T().Logf("🔄 Packet commitment found but proof is empty for sequence: %d", sequence)
+			}
+		}
+	}
 }

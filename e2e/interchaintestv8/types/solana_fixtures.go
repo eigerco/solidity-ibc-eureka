@@ -15,6 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 
@@ -540,5 +541,334 @@ func (g *SolanaFixtureGenerator) createFutureTimestampHeader(validHex string, ma
 
 	modifiedBytes, _ := proto.Marshal(&header)
 	return hex.EncodeToString(modifiedBytes)
+}
+
+// GenerateMembershipVerificationScenarios generates fixtures for membership verification tests
+func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenarios(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	if !g.Enabled {
+		return
+	}
+
+	g.suite.T().Log("🔧 Generating membership verification scenarios")
+
+	// Generate happy path scenario with real packet commitment
+	g.generateMembershipHappyPath(ctx, chainA, packet)
+
+	// Generate unhappy path scenarios
+	g.generateMembershipInvalidProof(ctx, chainA, packet)
+	g.generateMembershipWrongPath(ctx, chainA, packet)
+	g.generateMembershipWrongValue(ctx, chainA, packet)
+	g.generateMembershipWrongHeight(ctx, chainA, packet)
+	g.generateNonMembershipScenario(ctx, chainA)
+
+	g.suite.T().Log("✅ Membership verification scenarios generated successfully")
+}
+
+// generateMembershipHappyPath generates a valid membership proof for a real packet
+func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	g.suite.T().Log("🔧 Generating membership happy path scenario")
+
+	// Query the packet commitment with proof
+	g.suite.T().Logf("🔍 Querying packet commitment for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
+	commitmentResp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chainA, &channeltypesv2.QueryPacketCommitmentRequest{
+		ClientId: packet.SourceClient,
+		Sequence: packet.Sequence,
+	})
+	g.suite.Require().NoError(err)
+	
+	if commitmentResp.Commitment == nil {
+		g.suite.T().Logf("❌ Commitment is nil for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
+	} else {
+		g.suite.T().Logf("✅ Commitment found: %x", commitmentResp.Commitment)
+	}
+	
+	g.suite.Require().NotNil(commitmentResp.Commitment)
+	g.suite.Require().NotNil(commitmentResp.Proof)
+	g.suite.Require().NotZero(commitmentResp.ProofHeight.RevisionHeight)
+
+	// Get consensus state at proof height
+	consensusStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
+		ClientId:       ibctesting.FirstClientID,
+		RevisionNumber: commitmentResp.ProofHeight.RevisionNumber,
+		RevisionHeight: commitmentResp.ProofHeight.RevisionHeight,
+	})
+	g.suite.Require().NoError(err)
+
+	var tmConsensusState ibctmtypes.ConsensusState
+	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
+	g.suite.Require().NoError(err)
+
+	// Build the commitment path using payload port information
+	sourcePort := packet.Payloads[0].SourcePort
+	destPort := packet.Payloads[0].DestinationPort
+	commitmentPath := g.constructCommitmentPath(packet.Sequence, sourcePort, destPort)
+
+	// Create the membership proof message
+	membershipMsg := map[string]interface{}{
+		"height":              commitmentResp.ProofHeight.RevisionHeight,
+		"delay_time_period":   0,
+		"delay_block_period":  0,
+		"proof":               hex.EncodeToString(commitmentResp.Proof),
+		"path":                commitmentPath,
+		"value":               hex.EncodeToString(commitmentResp.Commitment),
+		"metadata":            g.createMetadata("Valid membership proof for packet commitment"),
+	}
+
+	// Get client state for context
+	tmClientState := g.queryTendermintClientState(ctx, chainA)
+	solanaClientState := g.convertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+
+	solanaConsensusState := map[string]interface{}{
+		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
+		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
+		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", commitmentResp.ProofHeight.RevisionHeight)),
+	}
+
+	unifiedFixture := map[string]interface{}{
+		"scenario":        "membership_happy_path",
+		"client_state":    solanaClientState,
+		"consensus_state": solanaConsensusState,
+		"membership_msg":  membershipMsg,
+		"packet_info": map[string]interface{}{
+			"sequence":            packet.Sequence,
+			"source_port":         sourcePort,
+			"destination_port":    destPort,
+		},
+		"metadata": g.createUnifiedMetadata("membership_happy_path", tmClientState.ChainId),
+	}
+
+	filename := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
+	g.saveJsonFixture(filename, unifiedFixture)
+	g.suite.T().Logf("💾 Membership happy path fixture saved: %s", filename)
+}
+
+// generateMembershipInvalidProof generates a fixture with corrupted proof bytes
+func (g *SolanaFixtureGenerator) generateMembershipInvalidProof(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	g.suite.T().Log("🔧 Generating membership invalid proof scenario")
+
+	// Load the happy path fixture to get valid structure
+	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
+	g.suite.Require().FileExists(happyPathFile)
+
+	data, err := os.ReadFile(happyPathFile)
+	g.suite.Require().NoError(err)
+
+	var happyFixture map[string]interface{}
+	err = json.Unmarshal(data, &happyFixture)
+	g.suite.Require().NoError(err)
+
+	// Deep copy the fixture
+	invalidFixture := g.deepCopyFixture(happyFixture)
+	
+	// Corrupt the proof
+	membershipMsg := invalidFixture["membership_msg"].(map[string]interface{})
+	proofHex := membershipMsg["proof"].(string)
+	
+	// Corrupt the middle of the proof
+	proofBytes, _ := hex.DecodeString(proofHex)
+	if len(proofBytes) > 20 {
+		proofBytes[len(proofBytes)/2] ^= 0xFF
+		proofBytes[len(proofBytes)/2+1] ^= 0xFF
+	}
+	
+	membershipMsg["proof"] = hex.EncodeToString(proofBytes)
+	membershipMsg["metadata"] = g.createMetadata("Corrupted merkle proof - should fail verification")
+	
+	invalidFixture["scenario"] = "membership_invalid_proof"
+	invalidFixture["metadata"] = g.createUnifiedMetadata("membership_invalid_proof", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
+
+	filename := filepath.Join(g.FixtureDir, "verify_membership_invalid_proof.json")
+	g.saveJsonFixture(filename, invalidFixture)
+	g.suite.T().Logf("💾 Membership invalid proof fixture saved: %s", filename)
+}
+
+// generateMembershipWrongPath generates a fixture with incorrect commitment path
+func (g *SolanaFixtureGenerator) generateMembershipWrongPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	g.suite.T().Log("🔧 Generating membership wrong path scenario")
+
+	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
+	g.suite.Require().FileExists(happyPathFile)
+
+	data, err := os.ReadFile(happyPathFile)
+	g.suite.Require().NoError(err)
+
+	var happyFixture map[string]interface{}
+	err = json.Unmarshal(data, &happyFixture)
+	g.suite.Require().NoError(err)
+
+	wrongPathFixture := g.deepCopyFixture(happyFixture)
+	
+	// Use wrong sequence number in path
+	sourcePort := packet.Payloads[0].SourcePort
+	destPort := packet.Payloads[0].DestinationPort
+	wrongPath := g.constructCommitmentPath(packet.Sequence+100, sourcePort, destPort)
+	
+	membershipMsg := wrongPathFixture["membership_msg"].(map[string]interface{})
+	membershipMsg["path"] = wrongPath
+	membershipMsg["metadata"] = g.createMetadata("Wrong commitment path - sequence number mismatch")
+	
+	wrongPathFixture["scenario"] = "membership_wrong_path"
+	wrongPathFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_path", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
+
+	filename := filepath.Join(g.FixtureDir, "verify_membership_wrong_path.json")
+	g.saveJsonFixture(filename, wrongPathFixture)
+	g.suite.T().Logf("💾 Membership wrong path fixture saved: %s", filename)
+}
+
+// generateMembershipWrongValue generates a fixture with incorrect commitment value
+func (g *SolanaFixtureGenerator) generateMembershipWrongValue(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	g.suite.T().Log("🔧 Generating membership wrong value scenario")
+
+	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
+	g.suite.Require().FileExists(happyPathFile)
+
+	data, err := os.ReadFile(happyPathFile)
+	g.suite.Require().NoError(err)
+
+	var happyFixture map[string]interface{}
+	err = json.Unmarshal(data, &happyFixture)
+	g.suite.Require().NoError(err)
+
+	wrongValueFixture := g.deepCopyFixture(happyFixture)
+	
+	// Use completely different commitment value
+	wrongCommitment := make([]byte, 32)
+	for i := range wrongCommitment {
+		wrongCommitment[i] = 0xAB
+	}
+	
+	membershipMsg := wrongValueFixture["membership_msg"].(map[string]interface{})
+	membershipMsg["value"] = hex.EncodeToString(wrongCommitment)
+	membershipMsg["metadata"] = g.createMetadata("Wrong commitment value - does not match packet")
+	
+	wrongValueFixture["scenario"] = "membership_wrong_value"
+	wrongValueFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_value", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
+
+	filename := filepath.Join(g.FixtureDir, "verify_membership_wrong_value.json")
+	g.saveJsonFixture(filename, wrongValueFixture)
+	g.suite.T().Logf("💾 Membership wrong value fixture saved: %s", filename)
+}
+
+// generateMembershipWrongHeight generates a fixture with incorrect proof height
+func (g *SolanaFixtureGenerator) generateMembershipWrongHeight(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+	g.suite.T().Log("🔧 Generating membership wrong height scenario")
+
+	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
+	g.suite.Require().FileExists(happyPathFile)
+
+	data, err := os.ReadFile(happyPathFile)
+	g.suite.Require().NoError(err)
+
+	var happyFixture map[string]interface{}
+	err = json.Unmarshal(data, &happyFixture)
+	g.suite.Require().NoError(err)
+
+	wrongHeightFixture := g.deepCopyFixture(happyFixture)
+	
+	membershipMsg := wrongHeightFixture["membership_msg"].(map[string]interface{})
+	currentHeight := membershipMsg["height"].(float64) // JSON unmarshals numbers as float64
+	membershipMsg["height"] = uint64(currentHeight) + 1000
+	membershipMsg["metadata"] = g.createMetadata("Wrong proof height - consensus state doesn't exist at this height")
+	
+	wrongHeightFixture["scenario"] = "membership_wrong_height"
+	wrongHeightFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_height", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
+
+	filename := filepath.Join(g.FixtureDir, "verify_membership_wrong_height.json")
+	g.saveJsonFixture(filename, wrongHeightFixture)
+	g.suite.T().Logf("💾 Membership wrong height fixture saved: %s", filename)
+}
+
+// generateNonMembershipScenario generates a non-membership proof fixture
+func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+	g.suite.T().Log("🔧 Generating non-membership scenario")
+
+	// Query for a non-existent packet (very high sequence number)
+	nonExistentSequence := uint64(999999)
+	
+	// Try to query - this should return an error or empty commitment
+	commitmentResp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chainA, &channeltypesv2.QueryPacketCommitmentRequest{
+		ClientId: ibctesting.FirstClientID,
+		Sequence: nonExistentSequence,
+	})
+	
+	// For non-membership, we need the absence proof
+	g.suite.Require().NoError(err)
+	g.suite.Require().NotNil(commitmentResp.Proof) // Should have proof of absence
+	g.suite.Require().Nil(commitmentResp.Commitment) // Should have no commitment
+
+	// Get consensus state at proof height
+	consensusStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
+		ClientId:       ibctesting.FirstClientID,
+		RevisionNumber: commitmentResp.ProofHeight.RevisionNumber,
+		RevisionHeight: commitmentResp.ProofHeight.RevisionHeight,
+	})
+	g.suite.Require().NoError(err)
+
+	var tmConsensusState ibctmtypes.ConsensusState
+	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
+	g.suite.Require().NoError(err)
+
+	tmClientState := g.queryTendermintClientState(ctx, chainA)
+	solanaClientState := g.convertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+
+	solanaConsensusState := map[string]interface{}{
+		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
+		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
+		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", commitmentResp.ProofHeight.RevisionHeight)),
+	}
+
+	// Build the commitment path for non-existent packet
+	commitmentPath := g.constructCommitmentPath(nonExistentSequence, "transfer", "transfer")
+
+	nonMembershipMsg := map[string]interface{}{
+		"height":              commitmentResp.ProofHeight.RevisionHeight,
+		"delay_time_period":   0,
+		"delay_block_period":  0,
+		"proof":               hex.EncodeToString(commitmentResp.Proof),
+		"path":                commitmentPath,
+		"value":               "", // Empty for non-membership
+		"metadata":            g.createMetadata("Valid non-membership proof - packet doesn't exist"),
+	}
+
+	unifiedFixture := map[string]interface{}{
+		"scenario":        "non_membership_happy_path",
+		"client_state":    solanaClientState,
+		"consensus_state": solanaConsensusState,
+		"membership_msg":  nonMembershipMsg,
+		"packet_info": map[string]interface{}{
+			"sequence":            nonExistentSequence,
+			"source_channel":      "transfer",
+			"destination_channel": "transfer",
+		},
+		"metadata": g.createUnifiedMetadata("non_membership_happy_path", tmClientState.ChainId),
+	}
+
+	filename := filepath.Join(g.FixtureDir, "verify_non_membership_happy_path.json")
+	g.saveJsonFixture(filename, unifiedFixture)
+	g.suite.T().Logf("💾 Non-membership fixture saved: %s", filename)
+}
+
+// Helper function to construct ICS24 commitment path
+func (g *SolanaFixtureGenerator) constructCommitmentPath(sequence uint64, sourceChannel, destChannel string) []string {
+	return []string{
+		"commitments",
+		"ports",
+		sourceChannel,
+		"channels",
+		destChannel,
+		"sequences",
+		fmt.Sprintf("%d", sequence),
+	}
+}
+
+// Helper function to deep copy fixture maps
+func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map[string]interface{} {
+	// Marshal and unmarshal to create a deep copy
+	data, _ := json.Marshal(src)
+	var dst map[string]interface{}
+	json.Unmarshal(data, &dst)
+	return dst
 }
 

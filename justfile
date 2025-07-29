@@ -144,11 +144,23 @@ generate-ethereum-types:
 	cd e2e/interchaintestv8 && golangci-lint run --fix types/ethereum/types.gen.go
 
 # Generate the fixtures for the Solana tests using the e2e tests
+# Usage: just generate-fixtures-solana [all|update-client|membership]
+# Examples:
+#   just generate-fixtures-solana               # runs all generators (default)
+#   just generate-fixtures-solana all           # runs all generators
+#   just generate-fixtures-solana update-client # runs only update client generator
+#   just generate-fixtures-solana membership    # runs only membership generator
 [group('generate')]
-generate-fixtures-solana: clean-foundry install-relayer
+generate-fixtures-solana generator="all": clean-foundry install-relayer
 	@echo "Generating Solana fixtures... This may take a while."
-	@echo "Generating basic client state, consensus state, and update client fixtures..."
-	cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m
+	@if [ "{{generator}}" = "all" ] || [ "{{generator}}" = "update-client" ] || [ "{{generator}}" = "membership" ]; then \
+		echo "Generating client state, consensus state, update client, and membership verification fixtures..."; \
+		cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m; \
+	fi
+	@if [ "{{generator}}" != "all" ] && [ "{{generator}}" != "update-client" ] && [ "{{generator}}" != "membership" ]; then \
+		echo "Error: Invalid generator '{{generator}}'. Valid options are: all, update-client, membership"; \
+		exit 1; \
+	fi
 
 # Generate the fixtures for the Solidity tests using the e2e tests
 [group('generate')]
