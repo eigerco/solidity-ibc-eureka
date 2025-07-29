@@ -12,6 +12,7 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -631,13 +632,13 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.Require().NoError(err)
 			s.Require().NotEmpty(resp.TxHash)
 
-			// Wait for the packet commitment to be available
-			s.T().Log("🔍 Waiting for packet commitment to be available...")
+			// Wait a few blocks for the packet to be properly committed
+			s.T().Log("⏰ Waiting 5 seconds for packet to be committed...")
+			time.Sleep(5 * time.Second)
+
+			// Wait for packet commitment to be available with ABCI proof
+			s.T().Log("🔍 Waiting for packet commitment with ABCI proof...")
 			commitmentResp := s.waitForPacketCommitment(ctx, s.SimdA, ibctesting.FirstClientID, 1, 60*time.Second)
-			if commitmentResp == nil {
-				s.T().Log("⚠️  Packet commitment not found within timeout, skipping membership fixture generation")
-				return
-			}
 
 			s.T().Logf("🔍 Commitment found: %x", commitmentResp.Commitment)
 			s.T().Logf("🔍 Proof length: %d", len(commitmentResp.Proof))
@@ -663,6 +664,26 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 	}))
 }
 
+// queryPacketCommitmentWithProofABCI queries packet commitment using ABCI to get merkle proof
+func (s *CosmosRelayerTestSuite) queryPacketCommitmentWithProofABCI(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, height uint64) (*abci.ResponseQuery, error) {
+	// For IBC v2 (Eureka), construct the packet commitment path similar to SP1 tests
+	// The path format follows: clients/{clientId}/packets/sequences/{sequence}
+	packetCommitmentPath := fmt.Sprintf("clients/%s/packets/sequences/%d", clientId, sequence)
+	
+	// Use the proper IBC store key format, similar to how SP1 tests construct membershipKey
+	// Format: [][]byte{[]byte(ibcexported.StoreKey), packetCommitmentKey}
+	abciReq := &abci.RequestQuery{
+		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
+		Data:   []byte(packetCommitmentPath),
+		Height: int64(height) - 1, // Use height-1 for proof generation
+		Prove:  true,
+	}
+	
+	s.T().Logf("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), packetCommitmentPath, abciReq.Height)
+	
+	return e2esuite.ABCIQuery(ctx, chain, abciReq)
+}
+
 // waitForPacketCommitment waits for a packet commitment to be available with the specified timeout
 func (s *CosmosRelayerTestSuite) waitForPacketCommitment(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, timeout time.Duration) *channeltypesv2.QueryPacketCommitmentResponse {
 	ticker := time.NewTicker(1 * time.Second)
@@ -671,26 +692,57 @@ func (s *CosmosRelayerTestSuite) waitForPacketCommitment(ctx context.Context, ch
 	timeoutTimer := time.NewTimer(timeout)
 	defer timeoutTimer.Stop()
 
+	// Get current height for ABCI queries
+	clientStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chain, &clienttypes.QueryClientStateRequest{
+		ClientId: clientId,
+	})
+	if err != nil {
+		s.T().Logf("❌ Failed to get client state: %v", err)
+		return nil
+	}
+	
+	var tmClientState ibctmtypes.ClientState
+	err = proto.Unmarshal(clientStateResp.ClientState.Value, &tmClientState)
+	if err != nil {
+		s.T().Logf("❌ Failed to unmarshal client state: %v", err)
+		return nil
+	}
+	currentHeight := tmClientState.LatestHeight.RevisionHeight
+
 	for {
 		select {
 		case <-timeoutTimer.C:
 			s.T().Logf("⏰ Timeout waiting for packet commitment (sequence: %d)", sequence)
 			return nil
 		case <-ticker.C:
-			resp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chain, &channeltypesv2.QueryPacketCommitmentRequest{
-				ClientId: clientId,
-				Sequence: sequence,
-			})
-			if err == nil && resp.Commitment != nil && len(resp.Proof) > 0 {
-				s.T().Logf("✅ Found packet commitment with proof for sequence %d (proof length: %d)", sequence, len(resp.Proof))
-				return resp
+			// Use ABCI query to get commitment with proof
+			abciResp, err := s.queryPacketCommitmentWithProofABCI(ctx, chain, clientId, sequence, currentHeight)
+			if err == nil && len(abciResp.Value) > 0 && len(abciResp.ProofOps.Ops) > 0 {
+				s.T().Logf("✅ Found packet commitment with ABCI proof for sequence %d (value: %x, proof ops: %d)", 
+					sequence, abciResp.Value, len(abciResp.ProofOps.Ops))
+				
+				// Convert ABCI response to gRPC response format for compatibility
+				proofBytes, err := abciResp.ProofOps.Marshal()
+				if err != nil {
+					s.T().Logf("❌ Failed to marshal proof: %v", err)
+					continue
+				}
+				
+				return &channeltypesv2.QueryPacketCommitmentResponse{
+					Commitment: abciResp.Value,
+					Proof:      proofBytes,
+					ProofHeight: clienttypes.Height{
+						RevisionNumber: 0,
+						RevisionHeight: uint64(abciResp.Height + 1),
+					},
+				}
 			}
 			if err != nil {
-				s.T().Logf("🔄 Checking for packet commitment (sequence: %d): %v", sequence, err)
-			} else if resp.Commitment == nil {
-				s.T().Logf("🔄 Packet commitment found but nil for sequence: %d", sequence)
-			} else if len(resp.Proof) == 0 {
-				s.T().Logf("🔄 Packet commitment found but proof is empty for sequence: %d", sequence)
+				s.T().Logf("🔄 ABCI query error for packet commitment (sequence: %d): %v", sequence, err)
+			} else if len(abciResp.Value) == 0 {
+				s.T().Logf("🔄 ABCI packet commitment value is empty for sequence: %d", sequence)
+			} else if len(abciResp.ProofOps.Ops) == 0 {
+				s.T().Logf("🔄 ABCI packet commitment found but proof is empty for sequence: %d", sequence)
 			}
 		}
 	}

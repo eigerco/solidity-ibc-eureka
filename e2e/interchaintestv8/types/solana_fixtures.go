@@ -12,10 +12,12 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 
@@ -568,34 +570,53 @@ func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenarios(ctx con
 func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership happy path scenario")
 
-	// Query the packet commitment with proof
-	g.suite.T().Logf("🔍 Querying packet commitment for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
-	commitmentResp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chainA, &channeltypesv2.QueryPacketCommitmentRequest{
-		ClientId: packet.SourceClient,
-		Sequence: packet.Sequence,
+	// Get the current chain height for the query
+	clientState, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
+		ClientId: ibctesting.FirstClientID,
 	})
 	g.suite.Require().NoError(err)
 	
-	if commitmentResp.Commitment == nil {
-		g.suite.T().Logf("❌ Commitment is nil for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
+	var tmClientState ibctmtypes.ClientState
+	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
+	g.suite.Require().NoError(err)
+	currentHeight := tmClientState.LatestHeight.RevisionHeight
+
+	// Query the packet commitment with proof using ABCI
+	g.suite.T().Logf("🔍 Querying packet commitment via ABCI for ClientId: %s, Sequence: %d, Height: %d", packet.SourceClient, packet.Sequence, currentHeight)
+	abciResp, err := g.queryPacketCommitmentWithProof(ctx, chainA, packet.SourceClient, packet.Sequence, currentHeight)
+	g.suite.Require().NoError(err)
+	
+	if len(abciResp.Value) == 0 {
+		g.suite.T().Logf("❌ ABCI commitment value is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
 	} else {
-		g.suite.T().Logf("✅ Commitment found: %x", commitmentResp.Commitment)
+		g.suite.T().Logf("✅ ABCI commitment found: %x", abciResp.Value)
 	}
 	
-	g.suite.Require().NotNil(commitmentResp.Commitment)
-	g.suite.Require().NotNil(commitmentResp.Proof)
-	g.suite.Require().NotZero(commitmentResp.ProofHeight.RevisionHeight)
+	if len(abciResp.ProofOps.Ops) == 0 {
+		g.suite.T().Logf("❌ ABCI proof is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
+	} else {
+		g.suite.T().Logf("✅ ABCI proof found with %d operations", len(abciResp.ProofOps.Ops))
+	}
+	
+	g.suite.Require().NotEmpty(abciResp.Value, "Packet commitment value should not be empty")
+	g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "Merkle proof should not be empty")
+	g.suite.Require().NotZero(abciResp.Height, "Proof height should not be zero")
 
 	// Get consensus state at proof height
+	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
 	consensusStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
 		ClientId:       ibctesting.FirstClientID,
-		RevisionNumber: commitmentResp.ProofHeight.RevisionNumber,
-		RevisionHeight: commitmentResp.ProofHeight.RevisionHeight,
+		RevisionNumber: 0, // Use revision number 0 for simd chains
+		RevisionHeight: proofHeight,
 	})
 	g.suite.Require().NoError(err)
 
 	var tmConsensusState ibctmtypes.ConsensusState
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
+	g.suite.Require().NoError(err)
+
+	// Serialize the ABCI proof operations to bytes
+	proofBytes, err := abciResp.ProofOps.Marshal()
 	g.suite.Require().NoError(err)
 
 	// Build the commitment path using payload port information
@@ -605,24 +626,24 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 
 	// Create the membership proof message
 	membershipMsg := map[string]interface{}{
-		"height":              commitmentResp.ProofHeight.RevisionHeight,
+		"height":              proofHeight,
 		"delay_time_period":   0,
 		"delay_block_period":  0,
-		"proof":               hex.EncodeToString(commitmentResp.Proof),
+		"proof":               hex.EncodeToString(proofBytes),
 		"path":                commitmentPath,
-		"value":               hex.EncodeToString(commitmentResp.Commitment),
+		"value":               hex.EncodeToString(abciResp.Value),
 		"metadata":            g.createMetadata("Valid membership proof for packet commitment"),
 	}
 
 	// Get client state for context
-	tmClientState := g.queryTendermintClientState(ctx, chainA)
-	solanaClientState := g.convertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	tmClientStatePtr := g.queryTendermintClientState(ctx, chainA)
+	solanaClientState := g.convertClientStateToSolanaFormat(tmClientStatePtr, chainA.Config().ChainID)
 
 	solanaConsensusState := map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
 		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
-		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", commitmentResp.ProofHeight.RevisionHeight)),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", proofHeight)),
 	}
 
 	unifiedFixture := map[string]interface{}{
@@ -783,25 +804,34 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongHeight(ctx context.Conte
 func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating non-membership scenario")
 
+	// Get the current chain height for the query
+	clientState, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
+		ClientId: ibctesting.FirstClientID,
+	})
+	g.suite.Require().NoError(err)
+	
+	var tmClientState ibctmtypes.ClientState
+	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
+	g.suite.Require().NoError(err)
+	currentHeight := tmClientState.LatestHeight.RevisionHeight
+
 	// Query for a non-existent packet (very high sequence number)
 	nonExistentSequence := uint64(999999)
 	
-	// Try to query - this should return an error or empty commitment
-	commitmentResp, err := e2esuite.GRPCQuery[channeltypesv2.QueryPacketCommitmentResponse](ctx, chainA, &channeltypesv2.QueryPacketCommitmentRequest{
-		ClientId: ibctesting.FirstClientID,
-		Sequence: nonExistentSequence,
-	})
-	
-	// For non-membership, we need the absence proof
+	// Query using ABCI - this should return proof of absence
+	g.suite.T().Logf("🔍 Querying non-existent packet via ABCI for sequence: %d", nonExistentSequence)
+	abciResp, err := g.queryPacketCommitmentWithProof(ctx, chainA, ibctesting.FirstClientID, nonExistentSequence, currentHeight)
 	g.suite.Require().NoError(err)
-	g.suite.Require().NotNil(commitmentResp.Proof) // Should have proof of absence
-	g.suite.Require().Nil(commitmentResp.Commitment) // Should have no commitment
-
+	
+	// For non-membership, value should be empty but proof should exist
+	g.suite.Require().Empty(abciResp.Value, "Non-existent packet should have empty value")
+	g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "Should have proof of absence")
 	// Get consensus state at proof height
+	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
 	consensusStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
 		ClientId:       ibctesting.FirstClientID,
-		RevisionNumber: commitmentResp.ProofHeight.RevisionNumber,
-		RevisionHeight: commitmentResp.ProofHeight.RevisionHeight,
+		RevisionNumber: 0, // Use revision number 0 for simd chains
+		RevisionHeight: proofHeight,
 	})
 	g.suite.Require().NoError(err)
 
@@ -809,24 +839,28 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
 	g.suite.Require().NoError(err)
 
-	tmClientState := g.queryTendermintClientState(ctx, chainA)
-	solanaClientState := g.convertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	// Serialize the ABCI proof operations to bytes
+	proofBytes, err := abciResp.ProofOps.Marshal()
+	g.suite.Require().NoError(err)
+
+	tmClientStatePtr2 := g.queryTendermintClientState(ctx, chainA)
+	solanaClientState := g.convertClientStateToSolanaFormat(tmClientStatePtr2, chainA.Config().ChainID)
 
 	solanaConsensusState := map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
 		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
-		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", commitmentResp.ProofHeight.RevisionHeight)),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", proofHeight)),
 	}
 
 	// Build the commitment path for non-existent packet
 	commitmentPath := g.constructCommitmentPath(nonExistentSequence, "transfer", "transfer")
 
 	nonMembershipMsg := map[string]interface{}{
-		"height":              commitmentResp.ProofHeight.RevisionHeight,
+		"height":              proofHeight,
 		"delay_time_period":   0,
 		"delay_block_period":  0,
-		"proof":               hex.EncodeToString(commitmentResp.Proof),
+		"proof":               hex.EncodeToString(proofBytes),
 		"path":                commitmentPath,
 		"value":               "", // Empty for non-membership
 		"metadata":            g.createMetadata("Valid non-membership proof - packet doesn't exist"),
@@ -861,6 +895,26 @@ func (g *SolanaFixtureGenerator) constructCommitmentPath(sequence uint64, source
 		"sequences",
 		fmt.Sprintf("%d", sequence),
 	}
+}
+
+// queryPacketCommitmentWithProof queries packet commitment using ABCI to get merkle proof
+func (g *SolanaFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, height uint64) (*abci.ResponseQuery, error) {
+	// For IBC v2 (Eureka), construct the packet commitment path similar to SP1 tests
+	// The path format follows: clients/{clientId}/packets/sequences/{sequence}
+	packetCommitmentPath := fmt.Sprintf("clients/%s/packets/sequences/%d", clientId, sequence)
+	
+	// Use the proper IBC store key format, similar to how SP1 tests construct membershipKey
+	// Format: [][]byte{[]byte(ibcexported.StoreKey), packetCommitmentKey}
+	abciReq := &abci.RequestQuery{
+		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
+		Data:   []byte(packetCommitmentPath),
+		Height: int64(height) - 1, // Use height-1 for proof generation
+		Prove:  true,
+	}
+	
+	g.suite.T().Logf("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), packetCommitmentPath, abciReq.Height)
+	
+	return e2esuite.ABCIQuery(ctx, chain, abciReq)
 }
 
 // Helper function to deep copy fixture maps
