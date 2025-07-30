@@ -114,7 +114,16 @@ pub mod ics07_tendermint {
     }
 
     pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
-        instructions::verify_membership::verify_membership(ctx, msg)
+        msg!("=== ANCHOR ENTRY POINT: verify_membership ===");
+        msg!("msg.proof.len(): {}", msg.proof.len());
+        msg!("msg.value.len(): {}", msg.value.len());
+        msg!("msg.path.len(): {}", msg.path.len());
+        msg!("About to call instructions::verify_membership::verify_membership");
+        
+        let result = instructions::verify_membership::verify_membership(ctx, msg);
+        
+        msg!("verify_membership instruction completed with result: {:?}", result.is_ok());
+        result
     }
 
     pub fn verify_non_membership(
