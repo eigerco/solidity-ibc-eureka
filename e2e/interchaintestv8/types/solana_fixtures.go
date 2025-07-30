@@ -566,6 +566,126 @@ func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenarios(ctx con
 	g.suite.T().Log("✅ Membership verification scenarios generated successfully")
 }
 
+// GenerateMembershipVerificationScenariosWithPredefinedKeys generates membership fixtures using predefined keys
+func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
+	if !g.Enabled {
+		return
+	}
+	g.suite.T().Log("🔧 Generating membership verification scenarios with predefined keys")
+	
+	for i, keyPath := range keyPaths {
+		g.suite.T().Logf("🔍 Processing predefined key path: %s", keyPath)
+		g.generateMembershipFixtureForKey(ctx, chainA, keyPath, i)
+	}
+	
+	g.suite.T().Log("✅ Predefined key membership scenarios generated successfully")
+}
+
+// generateMembershipFixtureForKey generates a membership fixture for a specific predefined key
+func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Context, chainA *cosmos.CosmosChain, keyPath string, index int) {
+	g.suite.T().Logf("🔧 Generating membership fixture for key: %s", keyPath)
+
+	// Get the current chain height for the query
+	clientState, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
+		ClientId: ibctesting.FirstClientID,
+	})
+	g.suite.Require().NoError(err)
+	
+	var tmClientState ibctmtypes.ClientState
+	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
+	g.suite.Require().NoError(err)
+	currentHeight := tmClientState.LatestHeight.RevisionHeight
+
+	// Query using ABCI with the predefined key path
+	abciReq := &abci.RequestQuery{
+		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
+		Data:   []byte(keyPath),
+		Height: int64(currentHeight) - 1, // Use height-1 for proof generation
+		Prove:  true,
+	}
+	
+	g.suite.T().Logf("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), keyPath, abciReq.Height)
+	
+	abciResp, err := e2esuite.ABCIQuery(ctx, chainA, abciReq)
+	g.suite.Require().NoError(err)
+	
+	if len(abciResp.Value) == 0 {
+		g.suite.T().Logf("⚠️  ABCI value is empty for key: %s, skipping", keyPath)
+		return
+	}
+	
+	if len(abciResp.ProofOps.Ops) == 0 {
+		g.suite.T().Logf("⚠️  ABCI proof is empty for key: %s, skipping", keyPath)
+		return
+	}
+	
+	g.suite.T().Logf("✅ ABCI query successful - value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
+
+	// Serialize the ABCI proof operations to bytes
+	proofBytes, err := abciResp.ProofOps.Marshal()
+	g.suite.Require().NoError(err)
+
+	// Get consensus state - use the trusted height which we know exists after client creation/update
+	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
+	
+	// Use a simpler approach: find any available consensus state by querying all consensus states
+	allConsensusStatesResp, consensusErr := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
+		ClientId: ibctesting.FirstClientID,
+	})
+	g.suite.Require().NoError(consensusErr)
+	g.suite.Require().NotEmpty(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
+	
+	// Use the first available consensus state (most recent) directly from the response
+	firstConsensusState := allConsensusStatesResp.ConsensusStates[0]
+	availableHeight := firstConsensusState.Height.RevisionHeight
+	
+	g.suite.T().Logf("🔍 Using available consensus state at height %d", availableHeight)
+	
+	// Unmarshal the consensus state directly from the already fetched data
+	var tmConsensusState ibctmtypes.ConsensusState
+	err = proto.Unmarshal(firstConsensusState.ConsensusState.Value, &tmConsensusState)
+	g.suite.Require().NoError(err)
+
+	// Create the membership proof message
+	membershipMsg := map[string]interface{}{
+		"height":              proofHeight,
+		"delay_time_period":   0,
+		"delay_block_period":  0,
+		"proof":               hex.EncodeToString(proofBytes),
+		"path":                []string{keyPath}, // Use the key path directly
+		"value":               hex.EncodeToString(abciResp.Value),
+		"metadata":            g.createMetadata(fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)),
+	}
+
+	// Get client state for context
+	tmClientStatePtr := g.queryTendermintClientState(ctx, chainA)
+	solanaClientState := g.convertClientStateToSolanaFormat(tmClientStatePtr, chainA.Config().ChainID)
+
+	solanaConsensusState := map[string]interface{}{
+		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
+		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
+		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", availableHeight)),
+	}
+
+	unifiedFixture := map[string]interface{}{
+		"scenario":        fmt.Sprintf("membership_predefined_key_%d", index),
+		"client_state":    solanaClientState,
+		"consensus_state": solanaConsensusState,
+		"membership_msg":  membershipMsg,
+		"key_info": map[string]interface{}{
+			"path":        keyPath,
+			"value_size":  len(abciResp.Value),
+			"description": fmt.Sprintf("Predefined IBC key: %s", keyPath),
+		},
+		"metadata": g.createUnifiedMetadata(fmt.Sprintf("membership_predefined_key_%d", index), chainA.Config().ChainID),
+	}
+
+	filename := filepath.Join(g.FixtureDir, fmt.Sprintf("verify_membership_predefined_key_%d.json", index))
+	g.saveJsonFixture(filename, unifiedFixture)
+	g.suite.T().Logf("💾 Predefined key membership fixture saved: %s", filename)
+}
+
 // generateMembershipHappyPath generates a valid membership proof for a real packet
 func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership happy path scenario")

@@ -589,64 +589,16 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 				return
 			}
 
-			s.T().Log("🔧 Generating membership verification fixtures")
+			s.T().Log("🔧 Generating membership verification fixtures using predefined keys")
 
-			// Send a test packet to have something to prove membership for
-			simdAUser, simdBUser := s.CosmosUsers[0], s.CosmosUsers[1]
-			transferAmount := int64(1000000)
-			transferPayload := transfertypes.FungibleTokenPacketData{
-				Denom:    s.SimdA.Config().Denom,
-				Amount:   fmt.Sprintf("%d", transferAmount),
-				Sender:   simdAUser.FormattedAddress(),
-				Receiver: simdBUser.FormattedAddress(),
-				Memo:     "",
+			// Use predefined keys that we know exist in the IBC store, similar to SP1 approach
+			// These are common IBC keys that should be available after client creation
+			predefinedKeys := []string{
+				"clients/" + ibctesting.FirstClientID + "/clientState",
+				"clients/" + ibctesting.FirstClientID + "/consensusStates",
 			}
 
-			now := time.Now()
-			timeout := uint64(now.Add(30 * time.Minute).Unix())
-
-			payload := channeltypesv2.Payload{
-				SourcePort:      transfertypes.PortID,
-				DestinationPort: transfertypes.PortID,
-				Version:         transfertypes.V1,
-				Encoding:        transfertypes.EncodingJSON,
-				Value:           transferPayload.GetBytes(),
-			}
-
-			packet := channeltypesv2.Packet{
-				Sequence:           1,
-				SourceClient:       ibctesting.FirstClientID,
-				DestinationClient:  ibctesting.FirstClientID,
-				TimeoutTimestamp:   timeout,
-				Payloads:           []channeltypesv2.Payload{payload},
-			}
-
-			msgSendPacket := channeltypesv2.MsgSendPacket{
-				SourceClient:     packet.SourceClient,
-				TimeoutTimestamp: packet.TimeoutTimestamp,
-				Payloads:         packet.Payloads,
-				Signer:           simdAUser.FormattedAddress(),
-			}
-
-			resp, err := s.BroadcastMessages(ctx, s.SimdA, simdAUser, 200_000, &msgSendPacket)
-			s.Require().NoError(err)
-			s.Require().NotEmpty(resp.TxHash)
-
-			// Wait a few blocks for the packet to be properly committed
-			s.T().Log("⏰ Waiting 5 seconds for packet to be committed...")
-			time.Sleep(5 * time.Second)
-
-			// Wait for packet commitment to be available with ABCI proof
-			s.T().Log("🔍 Waiting for packet commitment with ABCI proof...")
-			commitmentResp := s.waitForPacketCommitment(ctx, s.SimdA, ibctesting.FirstClientID, 1, 60*time.Second)
-
-			s.T().Logf("🔍 Commitment found: %x", commitmentResp.Commitment)
-			s.T().Logf("🔍 Proof length: %d", len(commitmentResp.Proof))
-			s.T().Logf("🔍 Proof height: %d", commitmentResp.ProofHeight.RevisionHeight)
-
-			// Generate membership verification fixtures
-			packet.Sequence = 1
-			s.SolanaFixtures.GenerateMembershipVerificationScenarios(ctx, s.SimdA, packet)
+			s.SolanaFixtures.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, s.SimdA, predefinedKeys)
 		}))
 
 		s.Require().True(s.Run("Verify client update on Chain A", func() {
