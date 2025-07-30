@@ -210,4 +210,37 @@ pub mod fixtures {
         }
     }
 
+    // Membership verification fixture types
+    #[derive(Deserialize)]
+    pub struct MembershipMsgFixture {
+        pub delay_block_period: u64,
+        pub delay_time_period: u64,
+        pub height: u64,
+        pub path: Vec<String>,
+        pub proof: String,
+        pub value: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct MembershipVerificationFixture {
+        pub scenario: String,
+        pub client_state: ClientStateFixture,
+        pub consensus_state: ConsensusStateFixture,
+        pub membership_msg: MembershipMsgFixture,
+        pub metadata: FixtureMetadata,
+    }
+
+    pub fn load_membership_fixture(filename: &str) -> MembershipVerificationFixture {
+        let fixture_path = format!("../../tests/fixtures/{}.json", filename);
+        let fixture_content = std::fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|_| panic!("Failed to read fixture: {}", fixture_path));
+        
+        serde_json::from_str(&fixture_content)
+            .unwrap_or_else(|_| panic!("Failed to parse fixture: {}", fixture_path))
+    }
+
+    pub fn load_membership_predefined_key_fixture() -> MembershipVerificationFixture {
+        load_membership_fixture("verify_membership_predefined_key_0")
+    }
+
 }

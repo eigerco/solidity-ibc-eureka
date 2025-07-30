@@ -625,25 +625,75 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 	proofBytes, err := abciResp.ProofOps.Marshal()
 	g.suite.Require().NoError(err)
 
-	// Get consensus state - use the trusted height which we know exists after client creation/update
+	// Get consensus state at the same height as the proof
 	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
 	
-	// Use a simpler approach: find any available consensus state by querying all consensus states
-	allConsensusStatesResp, consensusErr := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
-		ClientId: ibctesting.FirstClientID,
+	// Query consensus state at the proof height (or find the closest available one)
+	consensusStateResp, consensusErr := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
+		ClientId:       ibctesting.FirstClientID,
+		RevisionNumber: 0,
+		RevisionHeight: proofHeight,
 	})
-	g.suite.Require().NoError(consensusErr)
-	g.suite.Require().NotEmpty(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
 	
-	// Use the first available consensus state (most recent) directly from the response
-	firstConsensusState := allConsensusStatesResp.ConsensusStates[0]
-	availableHeight := firstConsensusState.Height.RevisionHeight
+	// If consensus state doesn't exist at proof height, find the closest one
+	if consensusErr != nil {
+		g.suite.T().Logf("⚠️  No consensus state at proof height %d, finding closest available", proofHeight)
+		
+		// Query all consensus states to find the best match
+		allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
+			ClientId: ibctesting.FirstClientID,
+		})
+		g.suite.Require().NoError(err)
+		g.suite.Require().NotEmpty(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
+		
+		// Find the consensus state with height closest to but not exceeding proof height
+		var bestMatch *clienttypes.ConsensusStateWithHeight
+		for _, cs := range allConsensusStatesResp.ConsensusStates {
+			if cs.Height.RevisionHeight <= proofHeight {
+				if bestMatch == nil || cs.Height.RevisionHeight > bestMatch.Height.RevisionHeight {
+					bestMatch = &cs
+				}
+			}
+		}
+		
+		g.suite.Require().NotNil(bestMatch, "No suitable consensus state found")
+		actualHeight := bestMatch.Height.RevisionHeight
+		g.suite.T().Logf("🔍 Using consensus state at height %d (closest to proof height %d)", actualHeight, proofHeight)
+		
+		// Now query ABCI again with the consensus state height to get matching proof
+		abciReq = &abci.RequestQuery{
+			Path:   "store/" + string(ibcexported.StoreKey) + "/key",
+			Data:   []byte(keyPath),
+			Height: int64(actualHeight) - 1, // Use consensus state height for proof
+			Prove:  true,
+		}
+		
+		g.suite.T().Logf("📡 Re-querying ABCI with consensus state height: path=store/%s/key, data=%s, height=%d, prove=true", 
+			string(ibcexported.StoreKey), keyPath, abciReq.Height)
+		
+		abciResp, err = e2esuite.ABCIQuery(ctx, chainA, abciReq)
+		g.suite.Require().NoError(err)
+		g.suite.Require().NotEmpty(abciResp.Value, "ABCI value is empty after re-query")
+		g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "ABCI proof is empty after re-query")
+		
+		// Update proof height to match consensus state
+		proofHeight = actualHeight
+		
+		// Use the best match consensus state
+		var tmConsensusState ibctmtypes.ConsensusState
+		err = proto.Unmarshal(bestMatch.ConsensusState.Value, &tmConsensusState)
+		g.suite.Require().NoError(err)
+		
+		// Store consensus state for later use
+		consensusStateResp = &clienttypes.QueryConsensusStateResponse{
+			ConsensusState: bestMatch.ConsensusState,
+			ProofHeight:    bestMatch.Height,
+		}
+	}
 	
-	g.suite.T().Logf("🔍 Using available consensus state at height %d", availableHeight)
-	
-	// Unmarshal the consensus state directly from the already fetched data
+	// Extract consensus state
 	var tmConsensusState ibctmtypes.ConsensusState
-	err = proto.Unmarshal(firstConsensusState.ConsensusState.Value, &tmConsensusState)
+	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
 	g.suite.Require().NoError(err)
 
 	// Create the membership proof message
@@ -665,7 +715,7 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
 		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
-		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", availableHeight)),
+		"metadata":             g.createMetadata(fmt.Sprintf("Consensus state at height %d", proofHeight)),
 	}
 
 	unifiedFixture := map[string]interface{}{
