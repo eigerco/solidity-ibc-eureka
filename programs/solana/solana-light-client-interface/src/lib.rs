@@ -23,5 +23,8 @@ pub struct MembershipMsg {
     pub value: Vec<u8>,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct MembershipMsgSimplified {}
+
 // Include the auto-generated discriminators
 include!(concat!(env!("OUT_DIR"), "/discriminators.rs"));

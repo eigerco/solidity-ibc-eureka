@@ -16,6 +16,7 @@ pub use types::{
 };
 
 pub use solana_light_client_interface::MembershipMsg;
+pub use solana_light_client_interface::MembershipMsgSimplified;
 
 #[derive(Accounts)]
 #[instruction(chain_id: String, latest_height: u64, client_state: ClientState)]
@@ -111,16 +112,21 @@ pub mod ics07_tendermint {
         instructions::update_client::update_client(ctx, msg)
     }
 
-    pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
+    pub fn verify_membership(
+        ctx: Context<VerifyMembership>,
+        msg: MembershipMsgSimplified,
+    ) -> Result<()> {
         msg!("=== ANCHOR ENTRY POINT: verify_membership ===");
-        msg!("msg.proof.len(): {}", msg.proof.len());
-        msg!("msg.value.len(): {}", msg.value.len());
-        msg!("msg.path.len(): {}", msg.path.len());
+        // msg!("msg.proof.len(): {}", msg.proof.len());
+        // msg!("msg.value.len(): {}", msg.value.len());
         msg!("About to call instructions::verify_membership::verify_membership");
-        
+
         let result = instructions::verify_membership::verify_membership(ctx, msg);
-        
-        msg!("verify_membership instruction completed with result: {:?}", result.is_ok());
+
+        msg!(
+            "verify_membership instruction completed with result: {:?}",
+            result.is_ok()
+        );
         result
     }
 
