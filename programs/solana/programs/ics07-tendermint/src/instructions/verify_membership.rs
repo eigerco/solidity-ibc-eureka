@@ -1,5 +1,7 @@
 use crate::error::ErrorCode;
-use crate::helpers::{deserialize_merkle_proof, validate_proof_params};
+use crate::helpers::deserialize_merkle_proof;
+use crate::state::ConsensusStateStore;
+use crate::types::ClientState;
 use crate::VerifyMembership;
 use anchor_lang::prelude::*;
 use solana_light_client_interface::MembershipMsg;
@@ -12,45 +14,118 @@ pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> 
     require!(!msg.value.is_empty(), ErrorCode::MembershipEmptyValue);
     msg!("Step 1: Empty value check passed");
 
-    msg!("Step 2: Getting accounts");
-    let client_state = &ctx.accounts.client_state;
-    let consensus_state_store = &ctx.accounts.consensus_state_at_height;
-    msg!("Step 2: Accounts retrieved successfully");
+    msg!("Step 2: Validating and loading client state");
+    let client_state = validate_and_load_client_state(&ctx.accounts.client_state)?;
+    msg!("Step 2: Client state loaded and validated");
 
-    msg!("Step 3: Validating proof params");
-    validate_proof_params(client_state, consensus_state_store, &msg)?;
-    msg!("Step 3: Proof params validation passed");
+    msg!("Step 3: Validating and loading consensus state");
+    let consensus_state_store = validate_and_load_consensus_state(
+        &ctx.accounts.consensus_state_at_height,
+        ctx.accounts.client_state.key(),
+        msg.height,
+        ctx.program_id,
+    )?;
+    msg!("Step 3: Consensus state loaded and validated");
+
+    msg!("Step 4: Validating proof params");
+    validate_membership_params(&client_state, &consensus_state_store, &msg)?;
+    msg!("Step 4: Proof params validation passed");
 
     msg!(
-        "Step 4: About to deserialize proof of {} bytes",
+        "Step 5: About to deserialize proof of {} bytes",
         msg.proof.len()
     );
     let proof = deserialize_merkle_proof(&msg.proof).map_err(|e| {
-        msg!("Step 4: Proof deserialization failed: {:?}", e);
+        msg!("Step 5: Proof deserialization failed: {:?}", e);
         e
     })?;
-    msg!("Step 4: Proof deserialized successfully");
+    msg!("Step 5: Proof deserialized successfully");
 
     msg!(
-        "Step 5: Creating KV pair with path len: {}, value len: {}",
+        "Step 6: Creating KV pair with path len: {}, value len: {}",
         msg.path.len(),
         msg.value.len()
     );
     let kv_pair = KVPair::new(msg.path, msg.value);
-    msg!("Step 5: KV pair created successfully");
+    msg!("Step 6: KV pair created successfully");
 
-    msg!("Step 6: Getting app hash");
+    msg!("Step 7: Getting app hash");
     let app_hash = consensus_state_store.consensus_state.root;
-    msg!("Step 6: App hash retrieved: {:?}", app_hash);
+    msg!("Step 7: App hash retrieved: {:?}", app_hash);
 
-    msg!("Step 7: About to run membership verification");
+    msg!("Step 8: About to run membership verification");
     tendermint_light_client_membership::membership(app_hash, &[(kv_pair, proof)]).map_err(|e| {
-        msg!("Step 7: Membership verification failed: {:?}", e);
+        msg!("Step 8: Membership verification failed: {:?}", e);
         error!(ErrorCode::MembershipVerificationFailed)
     })?;
 
-    msg!("Step 8: Membership verification completed successfully");
+    msg!("Step 9: Membership verification completed successfully");
     msg!("=== VERIFY_MEMBERSHIP END ===");
+    Ok(())
+}
+
+fn validate_and_load_client_state(
+    client_state_account: &UncheckedAccount<'_>,
+) -> Result<ClientState> {
+    // Load and verify the account exists
+    let account_data = client_state_account.try_borrow_data()?;
+    require!(!account_data.is_empty(), ErrorCode::ClientStateNotFound);
+
+    // Deserialize the client state (include discriminator for proper validation)
+    ClientState::try_deserialize(&mut &account_data[..])
+        .map_err(|_e| error!(ErrorCode::SerializationError))
+}
+
+fn validate_and_load_consensus_state(
+    consensus_state_account: &UncheckedAccount<'_>,
+    client_key: Pubkey,
+    height: u64,
+    program_id: &Pubkey,
+) -> Result<ConsensusStateStore> {
+    // Validate the PDA
+    let (expected_pda, _) = Pubkey::find_program_address(
+        &[
+            b"consensus_state",
+            client_key.as_ref(),
+            &height.to_le_bytes(),
+        ],
+        program_id,
+    );
+
+    require!(
+        expected_pda == consensus_state_account.key(),
+        ErrorCode::AccountValidationFailed
+    );
+
+    // Load and verify the account exists
+    let account_data = consensus_state_account.try_borrow_data()?;
+    require!(!account_data.is_empty(), ErrorCode::ConsensusStateNotFound);
+
+    // Deserialize the consensus state (include discriminator for proper validation)
+    ConsensusStateStore::try_deserialize(&mut &account_data[..])
+        .map_err(|_e| error!(ErrorCode::SerializationError))
+}
+
+fn validate_membership_params(
+    client_state: &ClientState,
+    consensus_state_store: &ConsensusStateStore,
+    msg: &MembershipMsg,
+) -> Result<()> {
+    msg!("validate_membership_params: Starting validation");
+    
+    msg!("validate_membership_params: Checking if client is frozen");
+    require!(!client_state.is_frozen(), ErrorCode::ClientFrozen);
+    msg!("validate_membership_params: Client not frozen - OK");
+
+    msg!("validate_membership_params: Checking height match - consensus: {}, msg: {}", 
+         consensus_state_store.height, msg.height);
+    require!(
+        consensus_state_store.height == msg.height,
+        ErrorCode::ProofHeightNotFound
+    );
+    msg!("validate_membership_params: Height match - OK");
+
+    msg!("validate_membership_params: Validation completed successfully");
     Ok(())
 }
 

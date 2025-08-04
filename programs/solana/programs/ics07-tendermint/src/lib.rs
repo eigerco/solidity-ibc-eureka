@@ -68,8 +68,10 @@ pub struct UpdateClient<'info> {
 
 #[derive(Accounts)]
 pub struct VerifyMembership<'info> {
-    pub client_state: Account<'info, ClientState>,
-    pub consensus_state_at_height: Account<'info, ConsensusStateStore>,
+    /// CHECK: This account is validated in the instruction handler
+    pub client_state: UncheckedAccount<'info>,
+    /// CHECK: This account is validated in the instruction handler based on the height from the membership message
+    pub consensus_state_at_height: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
