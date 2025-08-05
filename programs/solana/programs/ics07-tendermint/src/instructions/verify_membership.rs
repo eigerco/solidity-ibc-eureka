@@ -5,7 +5,6 @@ use anchor_lang::prelude::*;
 use solana_light_client_interface::MembershipMsg;
 use tendermint_light_client_membership::KVPair;
 
-
 pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
     require!(!msg.value.is_empty(), ErrorCode::MembershipEmptyValue);
 
@@ -24,13 +23,11 @@ pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> 
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::state::ConsensusStateStore;
     use crate::test_helpers::fixtures::*;
-    use crate::types::ClientState;
     use anchor_lang::InstructionData;
     use mollusk_svm::Mollusk;
     use solana_sdk::account::Account;
@@ -49,7 +46,8 @@ mod tests {
         let fixture = load_membership_predefined_key_fixture();
         let client_state = client_state_from_fixture(&fixture.client_state);
         let consensus_state = consensus_state_from_fixture(&fixture.consensus_state);
-        
+        let target_height = fixture.membership_msg.height;
+
         let chain_id = &client_state.chain_id;
         let payer = Pubkey::new_unique();
         let latest_height = client_state.latest_height.revision_height;
@@ -134,8 +132,7 @@ mod tests {
 
         match result.program_result {
             mollusk_svm::result::ProgramResult::Success => {
-                // We need to create a consensus state at height 40 to match the membership proof
-                let target_height = 40u64;
+                // We need to create a consensus state at the proof height to match the membership proof
                 let (target_consensus_state_pda, _) = Pubkey::find_program_address(
                     &[
                         b"consensus_state",
@@ -145,19 +142,21 @@ mod tests {
                     &crate::ID,
                 );
 
-                // Create the consensus state at height 40 manually using the same pattern as Initialize
-                let mut accounts_with_height_40 = result.resulting_accounts;
-                
-                // Create the consensus state store for height 40
-                let consensus_state_store_40 = ConsensusStateStore {
+                // Create the consensus state at the target height manually using the same pattern as Initialize
+                let mut accounts_with_target_height = result.resulting_accounts;
+
+                // Create the consensus state store for the target height
+                let consensus_state_store_target = ConsensusStateStore {
                     height: target_height,
                     consensus_state: consensus_state.clone(),
                 };
-                
+
                 let mut consensus_state_data = vec![];
-                consensus_state_store_40.try_serialize(&mut consensus_state_data).unwrap();
-                
-                accounts_with_height_40.push((
+                consensus_state_store_target
+                    .try_serialize(&mut consensus_state_data)
+                    .unwrap();
+
+                accounts_with_target_height.push((
                     target_consensus_state_pda,
                     Account {
                         lamports: 1_000_000_000,
@@ -171,7 +170,7 @@ mod tests {
                 TestAccounts {
                     client_state_pda,
                     consensus_state_store_pda: target_consensus_state_pda,
-                    accounts: accounts_with_height_40,
+                    accounts: accounts_with_target_height,
                 }
             }
             _ => panic!("Initialize instruction failed: {:?}", result.program_result),
