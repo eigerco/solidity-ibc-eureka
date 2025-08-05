@@ -25,6 +25,10 @@ import (
 
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
+
+	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
+	"github.com/cosmos/ics23/go"
+	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 )
 
 type SolanaFixtureGenerator struct {
@@ -621,9 +625,21 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 	
 	g.suite.T().Logf("✅ ABCI query successful - value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
 
-	// Serialize the ABCI proof operations to bytes
-	proofBytes, err := abciResp.ProofOps.Marshal()
+	// TODO: Convert ABCI proof operations to IBC MerkleProof format
+	// For now, use the original approach but add detailed logging to understand the structure
+	g.suite.T().Logf("🔍 ABCI ProofOps analysis: %d operations", len(abciResp.ProofOps.Ops))
+	for i, op := range abciResp.ProofOps.Ops {
+		g.suite.T().Logf("   ProofOp[%d]: type=%s, key_len=%d, data_len=%d", i, op.Type, len(op.Key), len(op.Data))
+		// Try to understand what's in op.Data
+		if len(op.Data) > 0 {
+			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
+		}
+	}
+	
+	// Convert ABCI ProofOps to IBC MerkleProof format
+	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
+	g.suite.T().Logf("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 
 	// Get consensus state at the same height as the proof
 	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
@@ -785,9 +801,21 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
 	g.suite.Require().NoError(err)
 
-	// Serialize the ABCI proof operations to bytes
-	proofBytes, err := abciResp.ProofOps.Marshal()
+	// TODO: Convert ABCI proof operations to IBC MerkleProof format
+	// For now, use the original approach but add detailed logging to understand the structure
+	g.suite.T().Logf("🔍 ABCI ProofOps analysis: %d operations", len(abciResp.ProofOps.Ops))
+	for i, op := range abciResp.ProofOps.Ops {
+		g.suite.T().Logf("   ProofOp[%d]: type=%s, key_len=%d, data_len=%d", i, op.Type, len(op.Key), len(op.Data))
+		// Try to understand what's in op.Data
+		if len(op.Data) > 0 {
+			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
+		}
+	}
+	
+	// Convert ABCI ProofOps to IBC MerkleProof format
+	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
+	g.suite.T().Logf("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 
 	// Build the commitment path using payload port information
 	sourcePort := packet.Payloads[0].SourcePort
@@ -1009,9 +1037,21 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
 	g.suite.Require().NoError(err)
 
-	// Serialize the ABCI proof operations to bytes
-	proofBytes, err := abciResp.ProofOps.Marshal()
+	// TODO: Convert ABCI proof operations to IBC MerkleProof format
+	// For now, use the original approach but add detailed logging to understand the structure
+	g.suite.T().Logf("🔍 ABCI ProofOps analysis: %d operations", len(abciResp.ProofOps.Ops))
+	for i, op := range abciResp.ProofOps.Ops {
+		g.suite.T().Logf("   ProofOp[%d]: type=%s, key_len=%d, data_len=%d", i, op.Type, len(op.Key), len(op.Data))
+		// Try to understand what's in op.Data
+		if len(op.Data) > 0 {
+			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
+		}
+	}
+	
+	// Convert ABCI ProofOps to IBC MerkleProof format
+	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
+	g.suite.T().Logf("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 
 	tmClientStatePtr2 := g.queryTendermintClientState(ctx, chainA)
 	solanaClientState := g.convertClientStateToSolanaFormat(tmClientStatePtr2, chainA.Config().ChainID)
@@ -1095,4 +1135,45 @@ func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map
 	json.Unmarshal(data, &dst)
 	return dst
 }
+
+// convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
+func (g *SolanaFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
+	g.suite.T().Logf("🔄 Converting %d ABCI ProofOps to IBC MerkleProof format", len(proofOps.Ops))
+	
+	// Each ProofOp contains ICS23 CommitmentProof data in op.Data
+	// We need to extract these and create an IBC MerkleProof
+	var commitmentProofs []*ics23.CommitmentProof
+	
+	for i, op := range proofOps.Ops {
+		g.suite.T().Logf("   Processing ProofOp[%d]: type=%s, key_len=%d, data_len=%d", 
+			i, op.Type, len(op.Key), len(op.Data))
+		
+		// The op.Data contains the ICS23 CommitmentProof
+		// Parse it as a CommitmentProof
+		var commitmentProof ics23.CommitmentProof
+		if err := proto.Unmarshal(op.Data, &commitmentProof); err != nil {
+			g.suite.T().Logf("   ❌ Failed to unmarshal CommitmentProof from ProofOp[%d]: %v", i, err)
+			return nil, fmt.Errorf("failed to unmarshal CommitmentProof from ProofOp[%d]: %w", i, err)
+		}
+		
+		g.suite.T().Logf("   ✅ Successfully parsed CommitmentProof from ProofOp[%d]", i)
+		commitmentProofs = append(commitmentProofs, &commitmentProof)
+	}
+	
+	// Create IBC MerkleProof with the extracted CommitmentProofs
+	merkleProof := &commitmenttypes.MerkleProof{
+		Proofs: commitmentProofs,
+	}
+	
+	// Marshal the MerkleProof to bytes
+	proofBytes, err := proto.Marshal(merkleProof)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal MerkleProof: %w", err)
+	}
+	
+	g.suite.T().Logf("✅ Successfully converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
+	return proofBytes, nil
+}
+
+
 

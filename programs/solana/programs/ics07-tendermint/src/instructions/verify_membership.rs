@@ -6,14 +6,20 @@ use solana_light_client_interface::MembershipMsg;
 use tendermint_light_client_membership::KVPair;
 
 pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
+    msg!("STEP 1: Entry point reached");
     require!(!msg.value.is_empty(), ErrorCode::MembershipEmptyValue);
+    msg!("STEP 2: Value not empty check passed");
 
     let client_state = &ctx.accounts.client_state;
     let consensus_state_store = &ctx.accounts.consensus_state_at_height;
+    msg!("STEP 3: Account references obtained");
 
     validate_proof_params(client_state, consensus_state_store, &msg)?;
+    msg!("STEP 4: Proof params validated successfully");
 
+    msg!("STEP 5: About to deserialize proof, {} bytes", msg.proof.len());
     let proof = deserialize_merkle_proof(&msg.proof)?;
+    msg!("STEP 6: Proof deserialized successfully");
     let kv_pair = KVPair::new(msg.path, msg.value);
     let app_hash = consensus_state_store.consensus_state.root;
 
@@ -190,6 +196,57 @@ mod tests {
                 AccountMeta::new_readonly(test_accounts.consensus_state_store_pda, false),
             ],
             data: instruction::VerifyMembership { msg: msg.clone() }.data(),
+        }
+    }
+
+    #[test]
+    fn test_proof_data_standalone() {
+        // Test proof data parsing outside of Solana context
+        let fixture = load_membership_predefined_key_fixture();
+        let proof_hex = &fixture.membership_msg.proof;
+        let proof_bytes = hex_to_bytes(proof_hex);
+        
+        println!("Proof hex: {}", proof_hex);
+        println!("Proof bytes length: {}", proof_bytes.len());
+        println!("First 32 bytes: {:?}", &proof_bytes[..proof_bytes.len().min(32)]);
+        
+        // The issue: This data is in ABCI ProofOps format but we need MerkleProof format
+        // The first byte 0a (10) indicates field 1, which is the 'ops' field in ProofOps
+        println!("First byte analysis: 0x{:02x} = field {} wire type {}", 
+            proof_bytes[0], proof_bytes[0] >> 3, proof_bytes[0] & 0x07);
+        
+        // This confirms the data is ABCI ProofOps, not IBC MerkleProof
+        // We need to either:
+        // 1. Update the fixture generation to output MerkleProof format, or  
+        // 2. Update our deserializer to handle ProofOps format
+        
+        // For now, let's document this finding
+        println!("🔍 ANALYSIS: The proof data is in ABCI ProofOps format, not IBC MerkleProof format");
+        println!("   This explains the 'unexpected end group tag' error when trying to decode as MerkleProof");
+        
+        // Try to parse the proof directly using ibc-proto (this will fail as expected)
+        use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
+        use ibc_proto::Protobuf;
+        use prost::Message;
+        
+        match <RawMerkleProof as Message>::decode(&proof_bytes[..]) {
+            Ok(raw_proof) => {
+                println!("✅ Raw protobuf decode successful: {:?}", raw_proof);
+            }
+            Err(e) => {
+                println!("❌ Raw protobuf decode failed (expected): {:?}", e);
+            }
+        }
+        
+        // Try using ibc-rs deserializer (this will also fail as expected)
+        use ibc_core_commitment_types::merkle::MerkleProof;
+        match <MerkleProof as Protobuf<RawMerkleProof>>::decode_vec(&proof_bytes) {
+            Ok(proof) => {
+                println!("✅ IBC-rs decode successful: {:?}", proof);
+            }
+            Err(e) => {
+                println!("❌ IBC-rs decode failed (expected): {:?}", e);
+            }
         }
     }
 
