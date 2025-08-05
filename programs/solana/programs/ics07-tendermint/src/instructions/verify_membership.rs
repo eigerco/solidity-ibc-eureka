@@ -1,173 +1,47 @@
 use crate::error::ErrorCode;
-use crate::helpers::deserialize_merkle_proof;
+use crate::helpers::{deserialize_merkle_proof, validate_proof_params};
 use crate::state::ConsensusStateStore;
-use crate::types::{ClientState, IbcHeight};
+use crate::types::ClientState;
 use crate::VerifyMembership;
 use anchor_lang::prelude::*;
-use anchor_lang::AnchorDeserialize;
 use solana_light_client_interface::MembershipMsg;
 use tendermint_light_client_membership::KVPair;
 
+/// Size of Anchor's account discriminator in bytes
+const ANCHOR_DISCRIMINATOR_SIZE: usize = 8;
+
 pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
-    msg!("=== VERIFY_MEMBERSHIP START ===");
-
-    msg!("Step 1: Checking empty value requirement");
     require!(!msg.value.is_empty(), ErrorCode::MembershipEmptyValue);
-    msg!("Step 1: Empty value check passed");
 
-    // PRint ctx.accounts.client_state
-    msg!("Step 2: ctx.accounts.client_state:");
-    msg!(
-        "Step 2: ctx.accounts.client_state.key(): {}",
-        ctx.accounts.client_state.key()
-    );
-
-    msg!("Step 2: Validating and loading client state");
     let client_state = validate_and_load_client_state(&ctx.accounts.client_state)?;
 
-    // dummy client_state
-    // let client_state = ClientState {
-    //     chain_id: String::from("test"),
-    //     trust_level_numerator: 1,
-    //     trust_level_denominator: 3,
-    //     trusting_period: 1814400,
-    //     unbonding_period: 1814400,
-    //     max_clock_drift: 3,
-    //     frozen_height: IbcHeight::default(),
-    //     latest_height: IbcHeight::default(),
-    // };
-
-    // print client state
-    msg!("Step 2: Client state:");
-    msg!("Step 2: chain_id: {}", client_state.chain_id);
-    msg!(
-        "Step 2: trust_level_numerator: {}",
-        client_state.trust_level_numerator
-    );
-    msg!(
-        "Step 2: trust_level_denominator: {}",
-        client_state.trust_level_denominator
-    );
-    msg!("Step 2: trusting_period: {}", client_state.trusting_period);
-    msg!(
-        "Step 2: unbonding_period: {}",
-        client_state.unbonding_period
-    );
-    msg!("Step 2: max_clock_drift: {}", client_state.max_clock_drift);
-    msg!(
-        "Step 2: frozen_height: revision_number: {}, revision_height: {}",
-        client_state.frozen_height.revision_number,
-        client_state.frozen_height.revision_height
-    );
-    msg!(
-        "Step 2: latest_height: revision_number: {}, revision_height: {}",
-        client_state.latest_height.revision_number,
-        client_state.latest_height.revision_height
-    );
-
-    msg!("Step 2: Client state loaded and validated");
-
-    msg!("Step 3: About to start consensus state validation");
-    msg!("Step 3: Getting client_state key");
-    let client_key = ctx.accounts.client_state.key();
-    msg!("Step 3: Got client key: {:?}", client_key);
-
-    msg!("Step 3: About to call validate_and_load_consensus_state");
     let consensus_state_store = validate_and_load_consensus_state(
         &ctx.accounts.consensus_state_at_height,
-        client_key,
+        ctx.accounts.client_state.key(),
         msg.height,
         ctx.program_id,
     )?;
-    msg!("Step 3: Consensus state loaded and validated");
 
-    msg!("Step 4: Validating proof params");
-    validate_membership_params(&client_state, &consensus_state_store, &msg)?;
-    msg!("Step 4: Proof params validation passed");
+    validate_proof_params(&client_state, &consensus_state_store, &msg)?;
 
-    msg!(
-        "Step 5: About to deserialize proof of {} bytes",
-        msg.proof.len()
-    );
-    let proof = deserialize_merkle_proof(&msg.proof).map_err(|e| {
-        msg!("Step 5: Proof deserialization failed: {:?}", e);
-        e
-    })?;
-    msg!("Step 5: Proof deserialized successfully");
-
-    msg!(
-        "Step 6: Creating KV pair with path len: {}, value len: {}",
-        msg.path.len(),
-        msg.value.len()
-    );
+    let proof = deserialize_merkle_proof(&msg.proof)?;
     let kv_pair = KVPair::new(msg.path, msg.value);
-    msg!("Step 6: KV pair created successfully");
-
-    msg!("Step 7: Getting app hash");
     let app_hash = consensus_state_store.consensus_state.root;
-    msg!("Step 7: App hash retrieved: {:?}", app_hash);
 
-    msg!("Step 8: About to run membership verification");
-    tendermint_light_client_membership::membership(app_hash, &[(kv_pair, proof)]).map_err(|e| {
-        msg!("Step 8: Membership verification failed: {:?}", e);
-        error!(ErrorCode::MembershipVerificationFailed)
-    })?;
+    tendermint_light_client_membership::membership(app_hash, &[(kv_pair, proof)])
+        .map_err(|_| error!(ErrorCode::MembershipVerificationFailed))?;
 
-    msg!("Step 9: Membership verification completed successfully");
-    msg!("=== VERIFY_MEMBERSHIP END ===");
     Ok(())
 }
 
 fn validate_and_load_client_state(
     client_state_account: &UncheckedAccount<'_>,
 ) -> Result<ClientState> {
-    msg!("validate_and_load_client_state: Start");
-    
-    // Load and verify the account exists
-    msg!("validate_and_load_client_state: About to borrow account data");
     let account_data = client_state_account.try_borrow_data()?;
-    msg!("validate_and_load_client_state: Account data borrowed, size: {}", account_data.len());
-    
     require!(!account_data.is_empty(), ErrorCode::ClientStateNotFound);
-    msg!("validate_and_load_client_state: Account data is not empty");
 
-    // Debug: Print bytes individually to avoid array formatting issues
-    msg!("validate_and_load_client_state: Full account data debug:");
-    msg!("validate_and_load_client_state: Discriminator bytes individually:");
-    for i in 0..8 {
-        msg!("  Byte {}: {}", i, account_data[i]);
-    }
-    
-    msg!("validate_and_load_client_state: First 16 bytes after discriminator:");
-    for i in 0..16.min(account_data.len() - 8) {
-        msg!("  Byte {}: {}", 8 + i, account_data[8 + i]);
-    }
-    
-    // Let's examine what the first 4 bytes after discriminator represent as u32
-    if account_data.len() >= 12 {
-        let first_4_bytes = [account_data[8], account_data[9], account_data[10], account_data[11]];
-        let as_le_u32 = u32::from_le_bytes(first_4_bytes);
-        let as_be_u32 = u32::from_be_bytes(first_4_bytes);
-        msg!("validate_and_load_client_state: First 4 bytes as LE u32: {}", as_le_u32);
-        msg!("validate_and_load_client_state: First 4 bytes as BE u32: {}", as_be_u32);
-    }
-    
-    msg!("validate_and_load_client_state: About to try Anchor deserialization");
-    
-    // ISSUE: The test data has DOUBLE discriminator! Skip 16 bytes instead of 8
-    // This is because the test setup does:
-    // 1. ClientState::DISCRIMINATOR.to_vec() (8 bytes)
-    // 2. extend with try_serialize result which includes discriminator again (another 8 bytes)
-    msg!("validate_and_load_client_state: Skipping 16 bytes (double discriminator issue)");
-    let mut data_without_double_discriminator = &account_data[16..];
-    let result = ClientState::deserialize(&mut data_without_double_discriminator)
-        .map_err(|e| {
-            msg!("validate_and_load_client_state: Deserialization failed: {:?}", e);
-            error!(ErrorCode::SerializationError)
-        });
-    
-    msg!("validate_and_load_client_state: Deserialization completed");
-    result
+    ClientState::try_deserialize(&mut &account_data[..])
+        .map_err(|_| error!(ErrorCode::SerializationError))
 }
 
 fn validate_and_load_consensus_state(
@@ -191,55 +65,11 @@ fn validate_and_load_consensus_state(
         ErrorCode::AccountValidationFailed
     );
 
-    // Load and verify the account exists
     let account_data = consensus_state_account.try_borrow_data()?;
     require!(!account_data.is_empty(), ErrorCode::ConsensusStateNotFound);
 
-    // DEBUG: Check if consensus state also has double discriminator issue
-    msg!("validate_and_load_consensus_state: Account data size: {}", account_data.len());
-    msg!("validate_and_load_consensus_state: First 16 bytes:");
-    for i in 0..16.min(account_data.len()) {
-        msg!("  Byte {}: {}", i, account_data[i]);
-    }
-
-    // FORCE: Use double discriminator fix since the test data has the same issue
-    // The consensus state also has double discriminator based on the debug output
-    msg!("validate_and_load_consensus_state: Using 16-byte offset fix for double discriminator");
-    let mut data_without_double_discriminator = &account_data[16..];
-    let consensus_state = ConsensusStateStore::deserialize(&mut data_without_double_discriminator)
-        .map_err(|e| {
-            msg!("validate_and_load_consensus_state: Deserialization failed: {:?}", e);
-            error!(ErrorCode::SerializationError)
-        })?;
-    
-    msg!("validate_and_load_consensus_state: Deserialization worked, height: {}", consensus_state.height);
-    Ok(consensus_state)
-}
-
-fn validate_membership_params(
-    client_state: &ClientState,
-    consensus_state_store: &ConsensusStateStore,
-    msg: &MembershipMsg,
-) -> Result<()> {
-    msg!("validate_membership_params: Starting validation");
-
-    msg!("validate_membership_params: Checking if client is frozen");
-    require!(!client_state.is_frozen(), ErrorCode::ClientFrozen);
-    msg!("validate_membership_params: Client not frozen - OK");
-
-    msg!(
-        "validate_membership_params: Checking height match - consensus: {}, msg: {}",
-        consensus_state_store.height,
-        msg.height
-    );
-    require!(
-        consensus_state_store.height == msg.height,
-        ErrorCode::ProofHeightNotFound
-    );
-    msg!("validate_membership_params: Height match - OK");
-
-    msg!("validate_membership_params: Validation completed successfully");
-    Ok(())
+    ConsensusStateStore::try_deserialize(&mut &account_data[..])
+        .map_err(|_| error!(ErrorCode::SerializationError))
 }
 
 #[cfg(test)]
@@ -249,7 +79,6 @@ mod tests {
     use crate::test_helpers::fixtures::*;
     use crate::types::ClientState;
     use anchor_lang::InstructionData;
-    use mollusk_svm::result::Check;
     use mollusk_svm::Mollusk;
     use solana_sdk::account::Account;
     use solana_sdk::instruction::{AccountMeta, Instruction};
@@ -280,22 +109,18 @@ mod tests {
         );
 
         // Serialize client state data
-        let mut client_state_data = vec![];
-        client_state.try_serialize(&mut client_state_data).unwrap();
-        let mut final_client_state_data = ClientState::DISCRIMINATOR.to_vec();
-        final_client_state_data.extend_from_slice(&client_state_data);
+        let mut final_client_state_data = vec![];
+        client_state.try_serialize(&mut final_client_state_data).unwrap();
 
         // Serialize consensus state store data
         let consensus_state_store = ConsensusStateStore {
             height,
             consensus_state: consensus_state.clone(),
         };
-        let mut consensus_state_data = vec![];
+        let mut final_consensus_state_data = vec![];
         consensus_state_store
-            .try_serialize(&mut consensus_state_data)
+            .try_serialize(&mut final_consensus_state_data)
             .unwrap();
-        let mut final_consensus_state_data = ConsensusStateStore::DISCRIMINATOR.to_vec();
-        final_consensus_state_data.extend_from_slice(&consensus_state_data);
 
         let accounts = vec![
             (
@@ -401,7 +226,6 @@ mod tests {
 
         let mollusk = Mollusk::new(&crate::ID, "../../target/deploy/ics07_tendermint");
 
-        // Just try to process the instruction without validation checks to see error details
         let result = mollusk.process_instruction(&instruction, &test_accounts.accounts);
 
         match result.program_result {
