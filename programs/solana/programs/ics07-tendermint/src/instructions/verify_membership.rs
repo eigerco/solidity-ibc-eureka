@@ -91,44 +91,54 @@ mod tests {
         accounts: Vec<(Pubkey, Account)>,
     }
 
-    fn setup_test_accounts(
-        chain_id: &str,
-        height: u64,
-        client_state: &ClientState,
-        consensus_state: &crate::types::ConsensusState,
-    ) -> TestAccounts {
+    fn setup_initialized_client_for_membership() -> TestAccounts {
+        // Use the same pattern as update_client: run Initialize instruction to get properly formatted accounts
+        let fixture = load_membership_predefined_key_fixture();
+        let client_state = client_state_from_fixture(&fixture.client_state);
+        let consensus_state = consensus_state_from_fixture(&fixture.consensus_state);
+        
+        let chain_id = &client_state.chain_id;
+        let payer = Pubkey::new_unique();
+        let latest_height = client_state.latest_height.revision_height;
+
         let (client_state_pda, _) =
             Pubkey::find_program_address(&[b"client", chain_id.as_bytes()], &crate::ID);
         let (consensus_state_store_pda, _) = Pubkey::find_program_address(
             &[
                 b"consensus_state",
                 client_state_pda.as_ref(),
-                &height.to_le_bytes(),
+                &latest_height.to_le_bytes(),
             ],
             &crate::ID,
         );
 
-        // Serialize client state data
-        let mut final_client_state_data = vec![];
-        client_state.try_serialize(&mut final_client_state_data).unwrap();
-
-        // Serialize consensus state store data
-        let consensus_state_store = ConsensusStateStore {
-            height,
+        // Create Initialize instruction
+        let instruction_data = crate::instruction::Initialize {
+            chain_id: chain_id.to_string(),
+            latest_height,
+            client_state: client_state.clone(),
             consensus_state: consensus_state.clone(),
         };
-        let mut final_consensus_state_data = vec![];
-        consensus_state_store
-            .try_serialize(&mut final_consensus_state_data)
-            .unwrap();
 
+        let instruction = Instruction {
+            program_id: crate::ID,
+            accounts: vec![
+                AccountMeta::new(client_state_pda, false),
+                AccountMeta::new(consensus_state_store_pda, false),
+                AccountMeta::new(payer, true),
+                AccountMeta::new_readonly(system_program::ID, false),
+            ],
+            data: instruction_data.data(),
+        };
+
+        // Create empty accounts for Initialize instruction to populate
         let accounts = vec![
             (
                 client_state_pda,
                 Account {
-                    lamports: 1_000_000_000,
-                    data: final_client_state_data.clone(),
-                    owner: crate::ID,
+                    lamports: 0,
+                    data: vec![],
+                    owner: system_program::ID,
                     executable: false,
                     rent_epoch: 0,
                 },
@@ -136,9 +146,19 @@ mod tests {
             (
                 consensus_state_store_pda,
                 Account {
-                    lamports: 1_000_000_000,
-                    data: final_consensus_state_data.clone(),
-                    owner: crate::ID,
+                    lamports: 0,
+                    data: vec![],
+                    owner: system_program::ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            ),
+            (
+                payer,
+                Account {
+                    lamports: 10_000_000_000,
+                    data: vec![],
+                    owner: system_program::ID,
                     executable: false,
                     rent_epoch: 0,
                 },
@@ -155,19 +175,53 @@ mod tests {
             ),
         ];
 
-        println!(
-            "Client state account data size: {} bytes",
-            final_client_state_data.len()
-        );
-        println!(
-            "Consensus state account data size: {} bytes",
-            final_consensus_state_data.len()
-        );
+        // Execute Initialize instruction to get properly formatted accounts
+        let mollusk = Mollusk::new(&crate::ID, "../../target/deploy/ics07_tendermint");
+        let result = mollusk.process_instruction(&instruction, &accounts);
 
-        TestAccounts {
-            client_state_pda,
-            consensus_state_store_pda,
-            accounts,
+        match result.program_result {
+            mollusk_svm::result::ProgramResult::Success => {
+                // We need to create a consensus state at height 40 to match the membership proof
+                let target_height = 40u64;
+                let (target_consensus_state_pda, _) = Pubkey::find_program_address(
+                    &[
+                        b"consensus_state",
+                        client_state_pda.as_ref(),
+                        &target_height.to_le_bytes(),
+                    ],
+                    &crate::ID,
+                );
+
+                // Create the consensus state at height 40 manually using the same pattern as Initialize
+                let mut accounts_with_height_40 = result.resulting_accounts;
+                
+                // Create the consensus state store for height 40
+                let consensus_state_store_40 = ConsensusStateStore {
+                    height: target_height,
+                    consensus_state: consensus_state.clone(),
+                };
+                
+                let mut consensus_state_data = vec![];
+                consensus_state_store_40.try_serialize(&mut consensus_state_data).unwrap();
+                
+                accounts_with_height_40.push((
+                    target_consensus_state_pda,
+                    Account {
+                        lamports: 1_000_000_000,
+                        data: consensus_state_data,
+                        owner: crate::ID,
+                        executable: false,
+                        rent_epoch: 0,
+                    },
+                ));
+
+                TestAccounts {
+                    client_state_pda,
+                    consensus_state_store_pda: target_consensus_state_pda,
+                    accounts: accounts_with_height_40,
+                }
+            }
+            _ => panic!("Initialize instruction failed: {:?}", result.program_result),
         }
     }
 
@@ -191,12 +245,6 @@ mod tests {
     fn test_verify_membership_happy_path() {
         let fixture = load_membership_predefined_key_fixture();
 
-        let client_state = client_state_from_fixture(&fixture.client_state);
-        let consensus_state = consensus_state_from_fixture(&fixture.consensus_state);
-
-        // The consensus state in the fixture is at height 40, matching the proof height
-        let consensus_state_height = 40u64;
-
         // Convert fixture membership msg to actual MembershipMsg
         let membership_msg = MembershipMsg {
             delay_block_period: fixture.membership_msg.delay_block_period,
@@ -212,17 +260,9 @@ mod tests {
             value: hex_to_bytes(&fixture.membership_msg.value),
         };
 
-        let test_accounts = setup_test_accounts(
-            &client_state.chain_id,
-            consensus_state_height,
-            &client_state,
-            &consensus_state,
-        );
+        let test_accounts = setup_initialized_client_for_membership();
 
         let instruction = create_verify_membership_instruction(&test_accounts, &membership_msg);
-
-        println!("Instruction data size: {} bytes", instruction.data.len());
-        println!("Proof size in msg: {} bytes", membership_msg.proof.len());
 
         let mollusk = Mollusk::new(&crate::ID, "../../target/deploy/ics07_tendermint");
 
