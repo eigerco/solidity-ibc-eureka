@@ -1,28 +1,18 @@
 use crate::error::ErrorCode;
 use crate::helpers::{deserialize_merkle_proof, validate_proof_params};
-use crate::state::ConsensusStateStore;
-use crate::types::ClientState;
 use crate::VerifyMembership;
 use anchor_lang::prelude::*;
 use solana_light_client_interface::MembershipMsg;
 use tendermint_light_client_membership::KVPair;
 
-/// Size of Anchor's account discriminator in bytes
-const ANCHOR_DISCRIMINATOR_SIZE: usize = 8;
 
 pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> Result<()> {
     require!(!msg.value.is_empty(), ErrorCode::MembershipEmptyValue);
 
-    let client_state = validate_and_load_client_state(&ctx.accounts.client_state)?;
+    let client_state = &ctx.accounts.client_state;
+    let consensus_state_store = &ctx.accounts.consensus_state_at_height;
 
-    let consensus_state_store = validate_and_load_consensus_state(
-        &ctx.accounts.consensus_state_at_height,
-        ctx.accounts.client_state.key(),
-        msg.height,
-        ctx.program_id,
-    )?;
-
-    validate_proof_params(&client_state, &consensus_state_store, &msg)?;
+    validate_proof_params(client_state, consensus_state_store, &msg)?;
 
     let proof = deserialize_merkle_proof(&msg.proof)?;
     let kv_pair = KVPair::new(msg.path, msg.value);
@@ -34,43 +24,6 @@ pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> 
     Ok(())
 }
 
-fn validate_and_load_client_state(
-    client_state_account: &UncheckedAccount<'_>,
-) -> Result<ClientState> {
-    let account_data = client_state_account.try_borrow_data()?;
-    require!(!account_data.is_empty(), ErrorCode::ClientStateNotFound);
-
-    ClientState::try_deserialize(&mut &account_data[..])
-        .map_err(|_| error!(ErrorCode::SerializationError))
-}
-
-fn validate_and_load_consensus_state(
-    consensus_state_account: &UncheckedAccount<'_>,
-    client_key: Pubkey,
-    height: u64,
-    program_id: &Pubkey,
-) -> Result<ConsensusStateStore> {
-    // Validate the PDA
-    let (expected_pda, _) = Pubkey::find_program_address(
-        &[
-            b"consensus_state",
-            client_key.as_ref(),
-            &height.to_le_bytes(),
-        ],
-        program_id,
-    );
-
-    require!(
-        expected_pda == consensus_state_account.key(),
-        ErrorCode::AccountValidationFailed
-    );
-
-    let account_data = consensus_state_account.try_borrow_data()?;
-    require!(!account_data.is_empty(), ErrorCode::ConsensusStateNotFound);
-
-    ConsensusStateStore::try_deserialize(&mut &account_data[..])
-        .map_err(|_| error!(ErrorCode::SerializationError))
-}
 
 #[cfg(test)]
 mod tests {

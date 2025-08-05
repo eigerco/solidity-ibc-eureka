@@ -24,8 +24,8 @@ pub fn deserialize_misbehaviour(bytes: &[u8]) -> Result<Misbehaviour> {
 }
 
 pub fn validate_proof_params(
-    client_state: &ClientState,
-    consensus_state_store: &ConsensusStateStore,
+    client_state: &Account<ClientState>,
+    consensus_state_store: &Account<ConsensusStateStore>,
     msg: &MembershipMsg,
 ) -> Result<()> {
     require!(!client_state.is_frozen(), ErrorCode::ClientFrozen);
