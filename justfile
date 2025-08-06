@@ -133,6 +133,13 @@ generate-fixtures-wasm: clean-foundry install-relayer
 	@echo "Generating multi-period client update fixtures..."
 	cd e2e/interchaintestv8 && ETH_TESTNET_TYPE=pos GENERATE_WASM_FIXTURES=true go test -v -run '^TestWithRelayerTestSuite/Test_MultiPeriodClientUpdateToCosmos$' -timeout 60m
 
+# Generate the fixtures for the Solana tests using the e2e tests
+[group('generate')]
+generate-fixtures-solana: clean-foundry install-relayer
+	@echo "Generating Solana fixtures... This may take a while."
+	@echo "Generating basic client state, consensus state, and update client fixtures..."
+	cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m
+
 # Generate go types for the e2e tests from the etheruem light client code
 [group('generate')]
 generate-ethereum-types:
@@ -142,25 +149,6 @@ generate-ethereum-types:
 	sed -i.bak 's/int64/uint64/g' e2e/interchaintestv8/types/ethereum/types.gen.go # quicktype generates int64 instead of uint64 :(
 	rm -f e2e/interchaintestv8/types/ethereum/types.gen.go.bak # this is to be linux and mac compatible (coming from the sed command)
 	cd e2e/interchaintestv8 && golangci-lint run --fix types/ethereum/types.gen.go
-
-# Generate the fixtures for the Solana tests using the e2e tests
-# Usage: just generate-fixtures-solana [all|update-client|membership]
-# Examples:
-#   just generate-fixtures-solana               # runs all generators (default)
-#   just generate-fixtures-solana all           # runs all generators
-#   just generate-fixtures-solana update-client # runs only update client generator
-#   just generate-fixtures-solana membership    # runs only membership generator
-[group('generate')]
-generate-fixtures-solana generator="all": clean-foundry install-relayer
-	@echo "Generating Solana fixtures... This may take a while."
-	@if [ "{{generator}}" = "all" ] || [ "{{generator}}" = "update-client" ] || [ "{{generator}}" = "membership" ]; then \
-		echo "Generating client state, consensus state, update client, and membership verification fixtures..."; \
-		cd e2e/interchaintestv8 && GENERATE_SOLANA_FIXTURES=true go test -v -run '^TestWithCosmosRelayerTestSuite/Test_UpdateClient$' -timeout 40m; \
-	fi
-	@if [ "{{generator}}" != "all" ] && [ "{{generator}}" != "update-client" ] && [ "{{generator}}" != "membership" ]; then \
-		echo "Error: Invalid generator '{{generator}}'. Valid options are: all, update-client, membership"; \
-		exit 1; \
-	fi
 
 # Generate the fixtures for the Solidity tests using the e2e tests
 [group('generate')]
@@ -281,7 +269,19 @@ test-e2e-solana testname:
 	@echo "Running {{testname}} test..."
 	just test-e2e TestWithIbcEurekaSolanaTestSuite/{{testname}}
 
-# Run Solana unit tests (unit tests + mollusk + litesvm)
+# Run the Solana Anchor e2e tests
+[group('test')]
+test-anchor-solana *ARGS:
+	@echo "Running Solana Client Anchor tests (anchor-nix preferred) ..."
+	if command -v anchor-nix >/dev/null 2>&1; then \
+		echo "🦀 Using anchor-nix"; \
+		(cd programs/solana && anchor-nix test {{ARGS}}); \
+	else \
+		echo "🦀 Using anchor"; \
+		(cd programs/solana && anchor test {{ARGS}}); \
+	fi
+
+# Run Solana unit tests (mollusk + litesvm)
 [group('test')]
 test-solana *ARGS:
 	@echo "Building and running Solana unit tests..."
@@ -307,3 +307,15 @@ clean-cargo:
 	@echo "Cleaning up cargo target directory"
 	cargo clean
 	cd programs/sp1-programs && cargo clean
+
+# Run Slither static analysis on contracts
+# - **unused-return**: Return values from `verifyMembership` and `tryParseAddress` are intentionally unused
+# - **reentrancy-no-eth**: Cross-function reentrancy patterns are acceptable in this IBC implementation
+# - **builtin-symbol-shadowing**: Variable name 'msg' follows IBC conventions
+# - **assembly**: Assembly usage is from trusted OpenZeppelin libraries
+# - **naming-convention**: Follows IBC standards over Solidity conventions
+# - **encode-packed-collision**: `abi.encodePacked` usage is correct for IBC denomination paths
+[group('security')]
+slither:
+	@echo "Running Slither static analysis..."
+	slither . --config-file .slither.config.json

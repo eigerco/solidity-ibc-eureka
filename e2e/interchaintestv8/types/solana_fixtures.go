@@ -15,6 +15,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -26,9 +27,9 @@ import (
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
 
-	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	"github.com/cosmos/ics23/go"
 	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
+	ics23 "github.com/cosmos/ics23/go"
 )
 
 type SolanaFixtureGenerator struct {
@@ -39,7 +40,7 @@ type SolanaFixtureGenerator struct {
 
 func NewSolanaFixtureGenerator(s *suite.Suite) *SolanaFixtureGenerator {
 	generator := &SolanaFixtureGenerator{
-		Enabled: os.Getenv("GENERATE_SOLANA_FIXTURES") == "true",
+		Enabled: os.Getenv(testvalues.EnvKeyGenerateSolanaFixtures) == testvalues.EnvValueGenerateFixtures_True,
 		suite:   s,
 	}
 
@@ -50,7 +51,7 @@ func NewSolanaFixtureGenerator(s *suite.Suite) *SolanaFixtureGenerator {
 		}
 		generator.FixtureDir = absPath
 
-		if err := os.MkdirAll(generator.FixtureDir, 0755); err != nil {
+		if err := os.MkdirAll(generator.FixtureDir, 0o755); err != nil {
 			s.T().Fatalf("Failed to create Solana fixture directory: %v", err)
 		}
 		s.T().Logf("📁 Solana fixtures will be saved to: %s", generator.FixtureDir)
@@ -235,8 +236,8 @@ func (g *SolanaFixtureGenerator) corruptSignatureInValidHeader(validHex string) 
 	corruptedHeader := tmHeader
 
 	// Corrupt signature data in the commit while preserving the protobuf structure
-	if corruptedHeader.SignedHeader != nil && corruptedHeader.SignedHeader.Commit != nil {
-		commit := corruptedHeader.SignedHeader.Commit
+	if corruptedHeader.SignedHeader != nil && corruptedHeader.Commit != nil {
+		commit := corruptedHeader.Commit
 
 		// Corrupt block signature if it exists
 		if len(commit.Signatures) > 0 {
@@ -244,7 +245,7 @@ func (g *SolanaFixtureGenerator) corruptSignatureInValidHeader(validHex string) 
 			if len(commit.Signatures[0].Signature) > 10 {
 				// Flip a byte in the middle of the signature
 				sigPos := len(commit.Signatures[0].Signature) / 2
-				commit.Signatures[0].Signature[sigPos] = commit.Signatures[0].Signature[sigPos] ^ 0xFF
+				commit.Signatures[0].Signature[sigPos] ^= 0xFF
 				g.suite.T().Logf("🔧 Corrupted signature byte at position %d in first commit signature", sigPos)
 			}
 		}
@@ -253,7 +254,7 @@ func (g *SolanaFixtureGenerator) corruptSignatureInValidHeader(validHex string) 
 		if len(commit.BlockID.Hash) > 0 {
 			// Flip one byte in the block hash
 			hashPos := len(commit.BlockID.Hash) / 2
-			commit.BlockID.Hash[hashPos] = commit.BlockID.Hash[hashPos] ^ 0xFF
+			commit.BlockID.Hash[hashPos] ^= 0xFF
 			g.suite.T().Logf("🔧 Corrupted block hash byte at position %d", hashPos)
 		}
 	}
@@ -333,7 +334,7 @@ func (g *SolanaFixtureGenerator) saveJsonFixture(filename string, data interface
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	g.suite.Require().NoError(err)
 
-	err = os.WriteFile(filename, jsonData, 0644)
+	err = os.WriteFile(filename, jsonData, 0o600)
 	g.suite.Require().NoError(err)
 }
 
@@ -371,7 +372,7 @@ func (g *SolanaFixtureGenerator) generateExpiredHeaderScenario(ctx context.Conte
 	g.suite.Require().FileExists(happyPathFile)
 
 	validHex := g.extractHexFromHappyPathFixture(happyPathFile)
-	
+
 	// Create an expired header by modifying the timestamp
 	expiredHex := g.createExpiredHeader(validHex, int64(tmClientState.TrustingPeriod.Seconds()))
 
@@ -410,7 +411,7 @@ func (g *SolanaFixtureGenerator) generateFutureTimestampScenario(ctx context.Con
 	g.suite.Require().FileExists(happyPathFile)
 
 	validHex := g.extractHexFromHappyPathFixture(happyPathFile)
-	
+
 	// Create a header with future timestamp (beyond max clock drift)
 	futureHex := g.createFutureTimestampHeader(validHex, int64(tmClientState.MaxClockDrift.Seconds()))
 
@@ -472,7 +473,6 @@ func (g *SolanaFixtureGenerator) generateWrongTrustedHeightScenario(ctx context.
 	g.suite.T().Logf("💾 Wrong trusted height scenario fixture saved: %s", filename)
 }
 
-
 // generateInvalidProtobufScenario creates a fixture with invalid protobuf bytes
 func (g *SolanaFixtureGenerator) generateInvalidProtobufScenario() {
 	g.suite.T().Log("🔧 Generating invalid protobuf scenario")
@@ -502,10 +502,10 @@ func (g *SolanaFixtureGenerator) generateInvalidProtobufScenario() {
 	}
 
 	dummyConsensusState := map[string]interface{}{
-		"timestamp":           uint64(time.Now().Unix()),
-		"root":                hex.EncodeToString(make([]byte, 32)),
+		"timestamp":            uint64(time.Now().Unix()),
+		"root":                 hex.EncodeToString(make([]byte, 32)),
 		"next_validators_hash": hex.EncodeToString(make([]byte, 32)),
-		"metadata":            g.createMetadata("Dummy consensus state for invalid protobuf test"),
+		"metadata":             g.createMetadata("Dummy consensus state for invalid protobuf test"),
 	}
 
 	unifiedFixture := map[string]interface{}{
@@ -526,11 +526,13 @@ func (g *SolanaFixtureGenerator) generateInvalidProtobufScenario() {
 func (g *SolanaFixtureGenerator) createExpiredHeader(validHex string, trustingPeriodSeconds int64) string {
 	headerBytes, _ := hex.DecodeString(validHex)
 	var header ibctmtypes.Header
-	proto.Unmarshal(headerBytes, &header)
+	if err := proto.Unmarshal(headerBytes, &header); err != nil {
+		g.suite.T().Fatalf("Failed to unmarshal header: %v", err)
+	}
 
 	// Set timestamp to be older than trusting period
 	expiredTime := time.Now().Add(-time.Duration(trustingPeriodSeconds+3600) * time.Second) // Add 1 hour buffer
-	header.SignedHeader.Header.Time = expiredTime
+	header.Header.Time = expiredTime
 
 	modifiedBytes, _ := proto.Marshal(&header)
 	return hex.EncodeToString(modifiedBytes)
@@ -539,11 +541,13 @@ func (g *SolanaFixtureGenerator) createExpiredHeader(validHex string, trustingPe
 func (g *SolanaFixtureGenerator) createFutureTimestampHeader(validHex string, maxClockDriftSeconds int64) string {
 	headerBytes, _ := hex.DecodeString(validHex)
 	var header ibctmtypes.Header
-	proto.Unmarshal(headerBytes, &header)
+	if err := proto.Unmarshal(headerBytes, &header); err != nil {
+		g.suite.T().Fatalf("Failed to unmarshal header: %v", err)
+	}
 
 	// Set timestamp to be in the future beyond max clock drift
 	futureTime := time.Now().Add(time.Duration(maxClockDriftSeconds+3600) * time.Second) // Add 1 hour buffer
-	header.SignedHeader.Header.Time = futureTime
+	header.Header.Time = futureTime
 
 	modifiedBytes, _ := proto.Marshal(&header)
 	return hex.EncodeToString(modifiedBytes)
@@ -576,12 +580,12 @@ func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenariosWithPred
 		return
 	}
 	g.suite.T().Log("🔧 Generating membership verification scenarios with predefined keys")
-	
+
 	for i, keyPath := range keyPaths {
 		g.suite.T().Logf("🔍 Processing predefined key path: %s", keyPath)
 		g.generateMembershipFixtureForKey(ctx, chainA, keyPath, i)
 	}
-	
+
 	g.suite.T().Log("✅ Predefined key membership scenarios generated successfully")
 }
 
@@ -594,7 +598,7 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 		ClientId: ibctesting.FirstClientID,
 	})
 	g.suite.Require().NoError(err)
-	
+
 	var tmClientState ibctmtypes.ClientState
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.suite.Require().NoError(err)
@@ -607,22 +611,22 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 		Height: int64(currentHeight) - 1, // Use height-1 for proof generation
 		Prove:  true,
 	}
-	
+
 	g.suite.T().Logf("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), keyPath, abciReq.Height)
-	
+
 	abciResp, err := e2esuite.ABCIQuery(ctx, chainA, abciReq)
 	g.suite.Require().NoError(err)
-	
+
 	if len(abciResp.Value) == 0 {
 		g.suite.T().Logf("⚠️  ABCI value is empty for key: %s, skipping", keyPath)
 		return
 	}
-	
+
 	if len(abciResp.ProofOps.Ops) == 0 {
 		g.suite.T().Logf("⚠️  ABCI proof is empty for key: %s, skipping", keyPath)
 		return
 	}
-	
+
 	g.suite.T().Logf("✅ ABCI query successful - value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
 
 	// TODO: Convert ABCI proof operations to IBC MerkleProof format
@@ -635,7 +639,7 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
 		}
 	}
-	
+
 	// Convert ABCI ProofOps to IBC MerkleProof format
 	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
@@ -643,25 +647,25 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 
 	// Get consensus state at the same height as the proof
 	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
-	
+
 	// Query consensus state at the proof height (or find the closest available one)
 	consensusStateResp, consensusErr := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
 		ClientId:       ibctesting.FirstClientID,
 		RevisionNumber: 0,
 		RevisionHeight: proofHeight,
 	})
-	
+
 	// If consensus state doesn't exist at proof height, find the closest one
 	if consensusErr != nil {
 		g.suite.T().Logf("⚠️  No consensus state at proof height %d, finding closest available", proofHeight)
-		
+
 		// Query all consensus states to find the best match
 		allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
 			ClientId: ibctesting.FirstClientID,
 		})
 		g.suite.Require().NoError(err)
 		g.suite.Require().NotEmpty(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
-		
+
 		// Find the consensus state with height closest to but not exceeding proof height
 		var bestMatch *clienttypes.ConsensusStateWithHeight
 		for _, cs := range allConsensusStatesResp.ConsensusStates {
@@ -671,11 +675,11 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 				}
 			}
 		}
-		
+
 		g.suite.Require().NotNil(bestMatch, "No suitable consensus state found")
 		actualHeight := bestMatch.Height.RevisionHeight
 		g.suite.T().Logf("🔍 Using consensus state at height %d (closest to proof height %d)", actualHeight, proofHeight)
-		
+
 		// Now query ABCI again with the consensus state height to get matching proof
 		abciReq = &abci.RequestQuery{
 			Path:   "store/" + string(ibcexported.StoreKey) + "/key",
@@ -683,30 +687,30 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 			Height: int64(actualHeight) - 1, // Use consensus state height for proof
 			Prove:  true,
 		}
-		
-		g.suite.T().Logf("📡 Re-querying ABCI with consensus state height: path=store/%s/key, data=%s, height=%d, prove=true", 
+
+		g.suite.T().Logf("📡 Re-querying ABCI with consensus state height: path=store/%s/key, data=%s, height=%d, prove=true",
 			string(ibcexported.StoreKey), keyPath, abciReq.Height)
-		
+
 		abciResp, err = e2esuite.ABCIQuery(ctx, chainA, abciReq)
 		g.suite.Require().NoError(err)
 		g.suite.Require().NotEmpty(abciResp.Value, "ABCI value is empty after re-query")
 		g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "ABCI proof is empty after re-query")
-		
+
 		// Update proof height to match consensus state
 		proofHeight = actualHeight
-		
+
 		// Use the best match consensus state
 		var tmConsensusState ibctmtypes.ConsensusState
 		err = proto.Unmarshal(bestMatch.ConsensusState.Value, &tmConsensusState)
 		g.suite.Require().NoError(err)
-		
+
 		// Store consensus state for later use
 		consensusStateResp = &clienttypes.QueryConsensusStateResponse{
 			ConsensusState: bestMatch.ConsensusState,
 			ProofHeight:    bestMatch.Height,
 		}
 	}
-	
+
 	// Extract consensus state
 	var tmConsensusState ibctmtypes.ConsensusState
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
@@ -714,13 +718,13 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 
 	// Create the membership proof message
 	membershipMsg := map[string]interface{}{
-		"height":              proofHeight,
-		"delay_time_period":   0,
-		"delay_block_period":  0,
-		"proof":               hex.EncodeToString(proofBytes),
-		"path":                []string{keyPath}, // Use the key path directly
-		"value":               hex.EncodeToString(abciResp.Value),
-		"metadata":            g.createMetadata(fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)),
+		"height":             proofHeight,
+		"delay_time_period":  0,
+		"delay_block_period": 0,
+		"proof":              hex.EncodeToString(proofBytes),
+		"path":               []string{keyPath}, // Use the key path directly
+		"value":              hex.EncodeToString(abciResp.Value),
+		"metadata":           g.createMetadata(fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)),
 	}
 
 	// Get client state for context
@@ -761,7 +765,7 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 		ClientId: ibctesting.FirstClientID,
 	})
 	g.suite.Require().NoError(err)
-	
+
 	var tmClientState ibctmtypes.ClientState
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.suite.Require().NoError(err)
@@ -771,19 +775,19 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 	g.suite.T().Logf("🔍 Querying packet commitment via ABCI for ClientId: %s, Sequence: %d, Height: %d", packet.SourceClient, packet.Sequence, currentHeight)
 	abciResp, err := g.queryPacketCommitmentWithProof(ctx, chainA, packet.SourceClient, packet.Sequence, currentHeight)
 	g.suite.Require().NoError(err)
-	
+
 	if len(abciResp.Value) == 0 {
 		g.suite.T().Logf("❌ ABCI commitment value is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
 	} else {
 		g.suite.T().Logf("✅ ABCI commitment found: %x", abciResp.Value)
 	}
-	
+
 	if len(abciResp.ProofOps.Ops) == 0 {
 		g.suite.T().Logf("❌ ABCI proof is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
 	} else {
 		g.suite.T().Logf("✅ ABCI proof found with %d operations", len(abciResp.ProofOps.Ops))
 	}
-	
+
 	g.suite.Require().NotEmpty(abciResp.Value, "Packet commitment value should not be empty")
 	g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "Merkle proof should not be empty")
 	g.suite.Require().NotZero(abciResp.Height, "Proof height should not be zero")
@@ -811,7 +815,7 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
 		}
 	}
-	
+
 	// Convert ABCI ProofOps to IBC MerkleProof format
 	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
@@ -824,13 +828,13 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 
 	// Create the membership proof message
 	membershipMsg := map[string]interface{}{
-		"height":              proofHeight,
-		"delay_time_period":   0,
-		"delay_block_period":  0,
-		"proof":               hex.EncodeToString(proofBytes),
-		"path":                commitmentPath,
-		"value":               hex.EncodeToString(abciResp.Value),
-		"metadata":            g.createMetadata("Valid membership proof for packet commitment"),
+		"height":             proofHeight,
+		"delay_time_period":  0,
+		"delay_block_period": 0,
+		"proof":              hex.EncodeToString(proofBytes),
+		"path":               commitmentPath,
+		"value":              hex.EncodeToString(abciResp.Value),
+		"metadata":           g.createMetadata("Valid membership proof for packet commitment"),
 	}
 
 	// Get client state for context
@@ -850,9 +854,9 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 		"consensus_state": solanaConsensusState,
 		"membership_msg":  membershipMsg,
 		"packet_info": map[string]interface{}{
-			"sequence":            packet.Sequence,
-			"source_port":         sourcePort,
-			"destination_port":    destPort,
+			"sequence":         packet.Sequence,
+			"source_port":      sourcePort,
+			"destination_port": destPort,
 		},
 		"metadata": g.createUnifiedMetadata("membership_happy_path", tmClientState.ChainId),
 	}
@@ -879,21 +883,21 @@ func (g *SolanaFixtureGenerator) generateMembershipInvalidProof(ctx context.Cont
 
 	// Deep copy the fixture
 	invalidFixture := g.deepCopyFixture(happyFixture)
-	
+
 	// Corrupt the proof
 	membershipMsg := invalidFixture["membership_msg"].(map[string]interface{})
 	proofHex := membershipMsg["proof"].(string)
-	
+
 	// Corrupt the middle of the proof
 	proofBytes, _ := hex.DecodeString(proofHex)
 	if len(proofBytes) > 20 {
 		proofBytes[len(proofBytes)/2] ^= 0xFF
 		proofBytes[len(proofBytes)/2+1] ^= 0xFF
 	}
-	
+
 	membershipMsg["proof"] = hex.EncodeToString(proofBytes)
 	membershipMsg["metadata"] = g.createMetadata("Corrupted merkle proof - should fail verification")
-	
+
 	invalidFixture["scenario"] = "membership_invalid_proof"
 	invalidFixture["metadata"] = g.createUnifiedMetadata("membership_invalid_proof", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
 
@@ -917,16 +921,16 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongPath(ctx context.Context
 	g.suite.Require().NoError(err)
 
 	wrongPathFixture := g.deepCopyFixture(happyFixture)
-	
+
 	// Use wrong sequence number in path
 	sourcePort := packet.Payloads[0].SourcePort
 	destPort := packet.Payloads[0].DestinationPort
 	wrongPath := g.constructCommitmentPath(packet.Sequence+100, sourcePort, destPort)
-	
+
 	membershipMsg := wrongPathFixture["membership_msg"].(map[string]interface{})
 	membershipMsg["path"] = wrongPath
 	membershipMsg["metadata"] = g.createMetadata("Wrong commitment path - sequence number mismatch")
-	
+
 	wrongPathFixture["scenario"] = "membership_wrong_path"
 	wrongPathFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_path", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
 
@@ -950,17 +954,17 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongValue(ctx context.Contex
 	g.suite.Require().NoError(err)
 
 	wrongValueFixture := g.deepCopyFixture(happyFixture)
-	
+
 	// Use completely different commitment value
 	wrongCommitment := make([]byte, 32)
 	for i := range wrongCommitment {
 		wrongCommitment[i] = 0xAB
 	}
-	
+
 	membershipMsg := wrongValueFixture["membership_msg"].(map[string]interface{})
 	membershipMsg["value"] = hex.EncodeToString(wrongCommitment)
 	membershipMsg["metadata"] = g.createMetadata("Wrong commitment value - does not match packet")
-	
+
 	wrongValueFixture["scenario"] = "membership_wrong_value"
 	wrongValueFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_value", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
 
@@ -984,12 +988,12 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongHeight(ctx context.Conte
 	g.suite.Require().NoError(err)
 
 	wrongHeightFixture := g.deepCopyFixture(happyFixture)
-	
+
 	membershipMsg := wrongHeightFixture["membership_msg"].(map[string]interface{})
 	currentHeight := membershipMsg["height"].(float64) // JSON unmarshals numbers as float64
 	membershipMsg["height"] = uint64(currentHeight) + 1000
 	membershipMsg["metadata"] = g.createMetadata("Wrong proof height - consensus state doesn't exist at this height")
-	
+
 	wrongHeightFixture["scenario"] = "membership_wrong_height"
 	wrongHeightFixture["metadata"] = g.createUnifiedMetadata("membership_wrong_height", happyFixture["client_state"].(map[string]interface{})["chain_id"].(string))
 
@@ -1007,7 +1011,7 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 		ClientId: ibctesting.FirstClientID,
 	})
 	g.suite.Require().NoError(err)
-	
+
 	var tmClientState ibctmtypes.ClientState
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.suite.Require().NoError(err)
@@ -1015,12 +1019,12 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 
 	// Query for a non-existent packet (very high sequence number)
 	nonExistentSequence := uint64(999999)
-	
+
 	// Query using ABCI - this should return proof of absence
 	g.suite.T().Logf("🔍 Querying non-existent packet via ABCI for sequence: %d", nonExistentSequence)
 	abciResp, err := g.queryPacketCommitmentWithProof(ctx, chainA, ibctesting.FirstClientID, nonExistentSequence, currentHeight)
 	g.suite.Require().NoError(err)
-	
+
 	// For non-membership, value should be empty but proof should exist
 	g.suite.Require().Empty(abciResp.Value, "Non-existent packet should have empty value")
 	g.suite.Require().NotEmpty(abciResp.ProofOps.Ops, "Should have proof of absence")
@@ -1047,7 +1051,7 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 			g.suite.T().Logf("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
 		}
 	}
-	
+
 	// Convert ABCI ProofOps to IBC MerkleProof format
 	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
 	g.suite.Require().NoError(err)
@@ -1067,13 +1071,13 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 	commitmentPath := g.constructCommitmentPath(nonExistentSequence, "transfer", "transfer")
 
 	nonMembershipMsg := map[string]interface{}{
-		"height":              proofHeight,
-		"delay_time_period":   0,
-		"delay_block_period":  0,
-		"proof":               hex.EncodeToString(proofBytes),
-		"path":                commitmentPath,
-		"value":               "", // Empty for non-membership
-		"metadata":            g.createMetadata("Valid non-membership proof - packet doesn't exist"),
+		"height":             proofHeight,
+		"delay_time_period":  0,
+		"delay_block_period": 0,
+		"proof":              hex.EncodeToString(proofBytes),
+		"path":               commitmentPath,
+		"value":              "", // Empty for non-membership
+		"metadata":           g.createMetadata("Valid non-membership proof - packet doesn't exist"),
 	}
 
 	unifiedFixture := map[string]interface{}{
@@ -1112,7 +1116,7 @@ func (g *SolanaFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Cont
 	// For IBC v2 (Eureka), construct the packet commitment path similar to SP1 tests
 	// The path format follows: clients/{clientId}/packets/sequences/{sequence}
 	packetCommitmentPath := fmt.Sprintf("clients/%s/packets/sequences/%d", clientId, sequence)
-	
+
 	// Use the proper IBC store key format, similar to how SP1 tests construct membershipKey
 	// Format: [][]byte{[]byte(ibcexported.StoreKey), packetCommitmentKey}
 	abciReq := &abci.RequestQuery{
@@ -1121,9 +1125,9 @@ func (g *SolanaFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Cont
 		Height: int64(height) - 1, // Use height-1 for proof generation
 		Prove:  true,
 	}
-	
+
 	g.suite.T().Logf("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), packetCommitmentPath, abciReq.Height)
-	
+
 	return e2esuite.ABCIQuery(ctx, chain, abciReq)
 }
 
@@ -1139,15 +1143,15 @@ func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
 func (g *SolanaFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
 	g.suite.T().Logf("🔄 Converting %d ABCI ProofOps to IBC MerkleProof format", len(proofOps.Ops))
-	
+
 	// Each ProofOp contains ICS23 CommitmentProof data in op.Data
 	// We need to extract these and create an IBC MerkleProof
 	var commitmentProofs []*ics23.CommitmentProof
-	
+
 	for i, op := range proofOps.Ops {
-		g.suite.T().Logf("   Processing ProofOp[%d]: type=%s, key_len=%d, data_len=%d", 
+		g.suite.T().Logf("   Processing ProofOp[%d]: type=%s, key_len=%d, data_len=%d",
 			i, op.Type, len(op.Key), len(op.Data))
-		
+
 		// The op.Data contains the ICS23 CommitmentProof
 		// Parse it as a CommitmentProof
 		var commitmentProof ics23.CommitmentProof
@@ -1155,25 +1159,22 @@ func (g *SolanaFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtc
 			g.suite.T().Logf("   ❌ Failed to unmarshal CommitmentProof from ProofOp[%d]: %v", i, err)
 			return nil, fmt.Errorf("failed to unmarshal CommitmentProof from ProofOp[%d]: %w", i, err)
 		}
-		
+
 		g.suite.T().Logf("   ✅ Successfully parsed CommitmentProof from ProofOp[%d]", i)
 		commitmentProofs = append(commitmentProofs, &commitmentProof)
 	}
-	
+
 	// Create IBC MerkleProof with the extracted CommitmentProofs
 	merkleProof := &commitmenttypes.MerkleProof{
 		Proofs: commitmentProofs,
 	}
-	
+
 	// Marshal the MerkleProof to bytes
 	proofBytes, err := proto.Marshal(merkleProof)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal MerkleProof: %w", err)
 	}
-	
+
 	g.suite.T().Logf("✅ Successfully converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 	return proofBytes, nil
 }
-
-
-
