@@ -25,7 +25,7 @@ pub fn deserialize_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
 
     // Check if this is ABCI ProofOps format (first byte = 0x0a = field 1, wire type 2)
     // or IBC MerkleProof format
-    let first_byte = bytes.get(0).copied().unwrap_or(0);
+    let first_byte = bytes.first().copied().unwrap_or(0);
     let field_number = first_byte >> 3;
     let wire_type = first_byte & 0x07;
 
@@ -63,7 +63,7 @@ pub fn deserialize_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
     }
 }
 
-/// Convert ABCI ProofOps format to IBC MerkleProof format
+/// Convert ABCI `ProofOps` format to IBC `MerkleProof` format
 /// This is a compatibility function for handling fixtures generated with ABCI format
 fn convert_proof_ops_to_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
     msg!("convert_proof_ops_to_merkle_proof: Attempting conversion");

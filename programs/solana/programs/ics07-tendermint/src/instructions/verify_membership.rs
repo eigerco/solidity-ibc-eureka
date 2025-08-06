@@ -157,7 +157,7 @@ mod tests {
                 // Create the consensus state store for the target height
                 let consensus_state_store_target = ConsensusStateStore {
                     height: target_height,
-                    consensus_state: consensus_state.clone(),
+                    consensus_state: consensus_state,
                 };
 
                 let mut consensus_state_data = vec![];
@@ -209,7 +209,7 @@ mod tests {
         let proof_hex = &fixture.membership_msg.proof;
         let proof_bytes = hex_to_bytes(proof_hex);
 
-        println!("Proof hex: {}", proof_hex);
+        println!("Proof hex: {proof_hex}");
         println!("Proof bytes length: {}", proof_bytes.len());
         println!(
             "First 32 bytes: {:?}",
@@ -243,10 +243,10 @@ mod tests {
 
         match <RawMerkleProof as Message>::decode(&proof_bytes[..]) {
             Ok(raw_proof) => {
-                println!("✅ Raw protobuf decode successful: {:?}", raw_proof);
+                println!("✅ Raw protobuf decode successful: {raw_proof:?}");
             }
             Err(e) => {
-                println!("❌ Raw protobuf decode failed (expected): {:?}", e);
+                println!("❌ Raw protobuf decode failed (expected): {e:?}");
             }
         }
 
@@ -254,10 +254,10 @@ mod tests {
         use ibc_core_commitment_types::merkle::MerkleProof;
         match <MerkleProof as Protobuf<RawMerkleProof>>::decode_vec(&proof_bytes) {
             Ok(proof) => {
-                println!("✅ IBC-rs decode successful: {:?}", proof);
+                println!("✅ IBC-rs decode successful: {proof:?}");
             }
             Err(e) => {
-                println!("❌ IBC-rs decode failed (expected): {:?}", e);
+                println!("❌ IBC-rs decode failed (expected): {e:?}");
             }
         }
     }
@@ -294,12 +294,11 @@ mod tests {
                 println!("✅ Membership verification successful for predefined key");
             }
             mollusk_svm::result::ProgramResult::Failure(error) => {
-                panic!("❌ Membership verification failed with error: {:?}", error);
+                panic!("❌ Membership verification failed with error: {error:?}");
             }
             mollusk_svm::result::ProgramResult::UnknownError(error) => {
                 panic!(
-                    "❌ Membership verification failed with unknown error: {:?}",
-                    error
+                    "❌ Membership verification failed with unknown error: {error:?}"
                 );
             }
         }

@@ -241,12 +241,12 @@ pub mod fixtures {
     }
 
     pub fn load_membership_fixture(filename: &str) -> MembershipVerificationFixture {
-        let fixture_path = format!("../../tests/fixtures/{}.json", filename);
+        let fixture_path = format!("../../tests/fixtures/{filename}.json");
         let fixture_content = std::fs::read_to_string(&fixture_path)
-            .unwrap_or_else(|_| panic!("Failed to read fixture: {}", fixture_path));
+            .unwrap_or_else(|_| panic!("Failed to read fixture: {fixture_path}"));
 
         serde_json::from_str(&fixture_content)
-            .unwrap_or_else(|_| panic!("Failed to parse fixture: {}", fixture_path))
+            .unwrap_or_else(|_| panic!("Failed to parse fixture: {fixture_path}"))
     }
 
     pub fn load_membership_predefined_key_fixture() -> MembershipVerificationFixture {
