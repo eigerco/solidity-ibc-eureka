@@ -10,14 +10,18 @@ import (
 	"time"
 
 	"github.com/cosmos/gogoproto/proto"
+	ics23 "github.com/cosmos/ics23/go"
 	"github.com/stretchr/testify/suite"
 
-	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
@@ -26,10 +30,6 @@ import (
 
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
-
-	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	ics23 "github.com/cosmos/ics23/go"
 )
 
 type SolanaFixtureGenerator struct {
@@ -1136,7 +1136,10 @@ func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map
 	// Marshal and unmarshal to create a deep copy
 	data, _ := json.Marshal(src)
 	var dst map[string]interface{}
-	json.Unmarshal(data, &dst)
+	if err := json.Unmarshal(data, &dst); err != nil {
+		// Return empty map if unmarshal fails
+		return make(map[string]interface{})
+	}
 	return dst
 }
 
