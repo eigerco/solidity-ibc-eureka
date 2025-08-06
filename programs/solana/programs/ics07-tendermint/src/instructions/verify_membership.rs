@@ -157,7 +157,7 @@ mod tests {
                 // Create the consensus state store for the target height
                 let consensus_state_store_target = ConsensusStateStore {
                     height: target_height,
-                    consensus_state: consensus_state,
+                    consensus_state,
                 };
 
                 let mut consensus_state_data = vec![];
@@ -204,6 +204,11 @@ mod tests {
 
     #[test]
     fn test_proof_data_standalone() {
+        use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
+        use ibc_proto::Protobuf;
+        use prost::Message;
+        use ibc_core_commitment_types::merkle::MerkleProof;
+
         // Test proof data parsing outside of Solana context
         let fixture = load_membership_predefined_key_fixture();
         let proof_hex = &fixture.membership_msg.proof;
@@ -237,10 +242,6 @@ mod tests {
         println!("   This explains the 'unexpected end group tag' error when trying to decode as MerkleProof");
 
         // Try to parse the proof directly using ibc-proto (this will fail as expected)
-        use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
-        use ibc_proto::Protobuf;
-        use prost::Message;
-
         match <RawMerkleProof as Message>::decode(&proof_bytes[..]) {
             Ok(raw_proof) => {
                 println!("✅ Raw protobuf decode successful: {raw_proof:?}");
@@ -251,7 +252,6 @@ mod tests {
         }
 
         // Try using ibc-rs deserializer (this will also fail as expected)
-        use ibc_core_commitment_types::merkle::MerkleProof;
         match <MerkleProof as Protobuf<RawMerkleProof>>::decode_vec(&proof_bytes) {
             Ok(proof) => {
                 println!("✅ IBC-rs decode successful: {proof:?}");
@@ -297,9 +297,7 @@ mod tests {
                 panic!("❌ Membership verification failed with error: {error:?}");
             }
             mollusk_svm::result::ProgramResult::UnknownError(error) => {
-                panic!(
-                    "❌ Membership verification failed with unknown error: {error:?}"
-                );
+                panic!("❌ Membership verification failed with unknown error: {error:?}");
             }
         }
     }

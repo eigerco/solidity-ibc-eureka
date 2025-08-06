@@ -65,7 +65,10 @@ pub fn deserialize_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
 
 /// Convert ABCI `ProofOps` format to IBC `MerkleProof` format
 /// This is a compatibility function for handling fixtures generated with ABCI format
-fn convert_proof_ops_to_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
+fn convert_proof_ops_to_merkle_proof(_bytes: &[u8]) -> Result<MerkleProof> {
+    use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
+    use prost::Message;
+
     msg!("convert_proof_ops_to_merkle_proof: Attempting conversion");
 
     // For now, create a minimal MerkleProof that will allow the test to proceed
@@ -76,8 +79,6 @@ fn convert_proof_ops_to_merkle_proof(bytes: &[u8]) -> Result<MerkleProof> {
     // Create a minimal MerkleProof with empty proofs to unblock testing
     // This is a temporary workaround - the proper solution would be to
     // fix the fixture generation to output correct MerkleProof format
-    use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
-    use prost::Message;
 
     let raw_merkle_proof = RawMerkleProof {
         proofs: vec![], // Empty for now - would need proper conversion
