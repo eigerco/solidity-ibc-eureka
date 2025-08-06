@@ -722,7 +722,7 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 		"delay_time_period":  0,
 		"delay_block_period": 0,
 		"proof":              hex.EncodeToString(proofBytes),
-		"path":               []string{keyPath}, // Use the key path directly
+		"path":               []string{string(ibcexported.StoreKey), keyPath}, // Include IBC store prefix like SP1
 		"value":              hex.EncodeToString(abciResp.Value),
 		"metadata":           g.createMetadata(fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)),
 	}

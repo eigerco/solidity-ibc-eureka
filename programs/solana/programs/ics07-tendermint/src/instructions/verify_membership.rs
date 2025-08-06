@@ -23,11 +23,39 @@ pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> 
     );
     let proof = deserialize_merkle_proof(&msg.proof)?;
     msg!("STEP 6: Proof deserialized successfully");
+    
+    // 🔍 PHASE 1: Detailed verification parameter logging
+    msg!("🔍 VERIFICATION DEBUG START:");
+    msg!("  Proof height: {}", msg.height);
+    msg!("  Consensus state height: {}", consensus_state_store.height);
+    msg!("  App hash: {:?}", consensus_state_store.consensus_state.root);
+    msg!("  Path segments count: {}", msg.path.len());
+    for (i, segment) in msg.path.iter().enumerate() {
+        msg!("    Path[{}]: {:?}", i, String::from_utf8_lossy(segment));
+    }
+    msg!("  Value length: {}", msg.value.len());
+    msg!("  Value preview: {:?}", &msg.value[..msg.value.len().min(32)]);
+    msg!("  Proof proofs count: {}", proof.proofs.len());
+    
+    // 🔍 PHASE 2: ICS23 CommitmentProof structure analysis 
+    for (i, commitment_proof) in proof.proofs.iter().enumerate() {
+        msg!("    CommitmentProof[{}] basic info:", i);
+        msg!("      Has proof: {}", commitment_proof.proof.is_some());
+        if commitment_proof.proof.is_some() {
+            // For now, just log that we have proof data - detailed analysis later
+            msg!("      Proof data exists");
+        }
+    }
+    msg!("🔍 VERIFICATION DEBUG END");
+    
     let kv_pair = KVPair::new(msg.path, msg.value);
     let app_hash = consensus_state_store.consensus_state.root;
 
     tendermint_light_client_membership::membership(app_hash, &[(kv_pair, proof)])
-        .map_err(|_| error!(ErrorCode::MembershipVerificationFailed))?;
+        .map_err(|e| {
+            msg!("❌ Membership verification failed with error: {:?}", e);
+            error!(ErrorCode::MembershipVerificationFailed)
+        })?;
 
     Ok(())
 }
