@@ -17,7 +17,10 @@ pub fn verify_membership(ctx: Context<VerifyMembership>, msg: MembershipMsg) -> 
     validate_proof_params(client_state, consensus_state_store, &msg)?;
     msg!("STEP 4: Proof params validated successfully");
 
-    msg!("STEP 5: About to deserialize proof, {} bytes", msg.proof.len());
+    msg!(
+        "STEP 5: About to deserialize proof, {} bytes",
+        msg.proof.len()
+    );
     let proof = deserialize_merkle_proof(&msg.proof)?;
     msg!("STEP 6: Proof deserialized successfully");
     let kv_pair = KVPair::new(msg.path, msg.value);
@@ -205,30 +208,39 @@ mod tests {
         let fixture = load_membership_predefined_key_fixture();
         let proof_hex = &fixture.membership_msg.proof;
         let proof_bytes = hex_to_bytes(proof_hex);
-        
+
         println!("Proof hex: {}", proof_hex);
         println!("Proof bytes length: {}", proof_bytes.len());
-        println!("First 32 bytes: {:?}", &proof_bytes[..proof_bytes.len().min(32)]);
-        
+        println!(
+            "First 32 bytes: {:?}",
+            &proof_bytes[..proof_bytes.len().min(32)]
+        );
+
         // The issue: This data is in ABCI ProofOps format but we need MerkleProof format
         // The first byte 0a (10) indicates field 1, which is the 'ops' field in ProofOps
-        println!("First byte analysis: 0x{:02x} = field {} wire type {}", 
-            proof_bytes[0], proof_bytes[0] >> 3, proof_bytes[0] & 0x07);
-        
+        println!(
+            "First byte analysis: 0x{:02x} = field {} wire type {}",
+            proof_bytes[0],
+            proof_bytes[0] >> 3,
+            proof_bytes[0] & 0x07
+        );
+
         // This confirms the data is ABCI ProofOps, not IBC MerkleProof
         // We need to either:
-        // 1. Update the fixture generation to output MerkleProof format, or  
+        // 1. Update the fixture generation to output MerkleProof format, or
         // 2. Update our deserializer to handle ProofOps format
-        
+
         // For now, let's document this finding
-        println!("🔍 ANALYSIS: The proof data is in ABCI ProofOps format, not IBC MerkleProof format");
+        println!(
+            "🔍 ANALYSIS: The proof data is in ABCI ProofOps format, not IBC MerkleProof format"
+        );
         println!("   This explains the 'unexpected end group tag' error when trying to decode as MerkleProof");
-        
+
         // Try to parse the proof directly using ibc-proto (this will fail as expected)
         use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
         use ibc_proto::Protobuf;
         use prost::Message;
-        
+
         match <RawMerkleProof as Message>::decode(&proof_bytes[..]) {
             Ok(raw_proof) => {
                 println!("✅ Raw protobuf decode successful: {:?}", raw_proof);
@@ -237,7 +249,7 @@ mod tests {
                 println!("❌ Raw protobuf decode failed (expected): {:?}", e);
             }
         }
-        
+
         // Try using ibc-rs deserializer (this will also fail as expected)
         use ibc_core_commitment_types::merkle::MerkleProof;
         match <MerkleProof as Protobuf<RawMerkleProof>>::decode_vec(&proof_bytes) {
