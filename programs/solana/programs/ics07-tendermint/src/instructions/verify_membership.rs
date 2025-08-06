@@ -204,10 +204,10 @@ mod tests {
 
     #[test]
     fn test_proof_data_standalone() {
+        use ibc_core_commitment_types::merkle::MerkleProof;
         use ibc_proto::ibc::core::commitment::v1::MerkleProof as RawMerkleProof;
         use ibc_proto::Protobuf;
         use prost::Message;
-        use ibc_core_commitment_types::merkle::MerkleProof;
 
         // Test proof data parsing outside of Solana context
         let fixture = load_membership_predefined_key_fixture();
