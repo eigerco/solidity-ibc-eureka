@@ -342,7 +342,6 @@ func (g *MembershipFixtureGenerator) generateMembershipHappyPath(ctx context.Con
 	g.generator.LogInfof("💾 Membership happy path fixture saved: %s", filename)
 }
 
-
 // Helper function to construct ICS24 commitment path
 func (g *MembershipFixtureGenerator) constructCommitmentPath(sequence uint64, sourceChannel, destChannel string) []string {
 	return []string{
@@ -375,7 +374,6 @@ func (g *MembershipFixtureGenerator) queryPacketCommitmentWithProof(ctx context.
 
 	return e2esuite.ABCIQuery(ctx, chain, abciReq)
 }
-
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
 func (g *MembershipFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {

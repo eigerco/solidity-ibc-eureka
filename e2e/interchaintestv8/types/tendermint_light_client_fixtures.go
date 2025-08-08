@@ -21,7 +21,7 @@ type TendermintLightClientFixtureGenerator struct {
 	Enabled    bool
 	FixtureDir string
 	suite      *suite.Suite
-	
+
 	// Submodule generators
 	updateClientGenerator *tendermint_light_client_fixtures.UpdateClientFixtureGenerator
 	membershipGenerator   *tendermint_light_client_fixtures.MembershipFixtureGenerator
@@ -49,7 +49,7 @@ func NewTendermintLightClientFixtureGenerator(s *suite.Suite) *TendermintLightCl
 
 		// Initialize utility functions
 		generator.utils = tendermint_light_client_fixtures.NewFixtureGeneratorUtils(s, generator.FixtureDir)
-		
+
 		// Initialize submodule generators
 		generator.updateClientGenerator = tendermint_light_client_fixtures.NewUpdateClientFixtureGenerator(generator)
 		generator.membershipGenerator = tendermint_light_client_fixtures.NewMembershipFixtureGenerator(generator)
@@ -153,41 +153,4 @@ func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationSc
 // GenerateMembershipVerificationScenariosWithPredefinedKeys delegates to the membership submodule
 func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
 	g.membershipGenerator.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, chainA, keyPaths)
-}
-
-// Legacy method names for backward compatibility (these are the methods used by external code)
-
-// queryTendermintClientState - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) queryTendermintClientState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ClientState {
-	return g.QueryTendermintClientState(ctx, chainA)
-}
-
-// queryTendermintConsensusState - backward compatibility  
-func (g *TendermintLightClientFixtureGenerator) queryTendermintConsensusState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ConsensusState {
-	return g.QueryTendermintConsensusState(ctx, chainA)
-}
-
-// convertClientStateToSolanaFormat - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) convertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
-	return g.ConvertClientStateToFixtureFormat(tmClientState, chainID)
-}
-
-// convertConsensusStateToSolanaFormat - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) convertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
-	return g.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainID)
-}
-
-// saveJsonFixture - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) saveJsonFixture(filename string, data interface{}) {
-	g.SaveJsonFixture(filename, data)
-}
-
-// createMetadata - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) createMetadata(description string) map[string]interface{} {
-	return g.CreateMetadata(description)
-}
-
-// createUnifiedMetadata - backward compatibility
-func (g *TendermintLightClientFixtureGenerator) createUnifiedMetadata(scenarioName, chainID string) map[string]interface{} {
-	return g.CreateUnifiedMetadata(scenarioName, chainID)
 }
