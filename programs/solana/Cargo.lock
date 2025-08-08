@@ -5276,7 +5276,6 @@ dependencies = [
 name = "tendermint-light-client-update-client"
 version = "0.1.0"
 dependencies = [
- "hex",
  "ibc-client-tendermint",
  "ibc-core-client",
  "ibc-core-client-types",
@@ -5284,8 +5283,6 @@ dependencies = [
  "ibc-core-host-types",
  "ibc-primitives",
  "prost",
- "serde",
- "serde_json",
  "sha2 0.10.9",
  "tendermint",
  "tendermint-light-client-verifier",

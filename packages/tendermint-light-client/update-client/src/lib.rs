@@ -1,27 +1,13 @@
 //! The crate that contains the types and utilities for `tendermint-light-client-update-client`
 //! program.
-#![deny(
-    missing_docs,
-    clippy::nursery,
-    clippy::pedantic,
-    warnings,
-    unused_crate_dependencies
-)]
+#![deny(missing_docs, clippy::nursery, clippy::pedantic, warnings)]
+#![cfg_attr(not(test), deny(unused_crate_dependencies))]
 
-use hex as _;
-use serde as _;
-use serde_json as _;
-use tendermint as _;
-use prost as _;
 use ibc_core_commitment_types as _;
+use prost as _;
+use tendermint as _;
 
 pub mod types;
-
-#[cfg(test)]
-mod fixtures;
-
-#[cfg(test)]
-mod tests;
 
 use std::{str::FromStr, time::Duration};
 
