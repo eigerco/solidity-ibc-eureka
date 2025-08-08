@@ -7784,11 +7784,10 @@ dependencies = [
  "hex",
  "ibc-core-commitment-types",
  "ibc-core-host-types",
+ "ibc-proto 0.51.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost",
  "serde",
  "serde_json",
- "tendermint",
- "tendermint-proto",
  "thiserror 2.0.12",
 ]
 

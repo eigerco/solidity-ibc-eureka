@@ -4,11 +4,10 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-use tendermint_light_client_membership::{membership, KVPair, MembershipError};
-use ibc_core_commitment_types::{merkle::MerkleProof, proto::ics23::CommitmentProof};
-use tendermint::merkle::proof::ProofOps;
+use ibc_core_commitment_types::merkle::MerkleProof;
+use ibc_proto::ibc::core::commitment::v1::MerkleProof as ProtoMerkleProof;
 use prost::Message;
-use tendermint_proto::{crypto, Protobuf};
+use tendermint_light_client_membership::{membership, KVPair, MembershipError};
 
 // Include the fixtures and helpers directly in this file
 
@@ -75,7 +74,7 @@ impl From<&MembershipMsgFixture> for KVPair {
     fn from(fixture: &MembershipMsgFixture) -> Self {
         let path_bytes: Vec<Vec<u8>> = fixture.path.iter().map(|s| s.as_bytes().to_vec()).collect();
         let value_bytes = hex::decode(&fixture.value).expect("valid hex");
-        
+
         Self::new(path_bytes, value_bytes)
     }
 }
@@ -83,17 +82,12 @@ impl From<&MembershipMsgFixture> for KVPair {
 /// Convert hex string to MerkleProof using proper protobuf deserialization
 fn hex_to_merkle_proof(hex_str: &str) -> MerkleProof {
     let bytes = hex::decode(hex_str).expect("valid hex");
-    let tm_proof_ops: ProofOps = Protobuf::<crypto::ProofOps>::decode(&*bytes).expect("valid ProofOps");
-    
-    // Convert Tendermint ProofOps to ICS MerkleProof
-    let mut proofs = Vec::with_capacity(tm_proof_ops.ops.len());
-    for op in &tm_proof_ops.ops {
-        let mut parsed = CommitmentProof { proof: None };
-        prost::Message::merge(&mut parsed, op.data.as_slice()).expect("valid commitment proof");
-        proofs.push(parsed);
-    }
-    
-    MerkleProof { proofs }
+
+    let proto_merkle_proof =
+        ProtoMerkleProof::decode(bytes.as_slice()).expect("valid proto MerkleProof");
+    proto_merkle_proof
+        .try_into()
+        .expect("valid conversion to MerkleProof")
 }
 
 /// Load a membership fixture from the fixtures directory
@@ -127,17 +121,23 @@ fn setup_test_context(fixture: MembershipVerificationFixture) -> Option<TestCont
         Ok(bytes) => bytes,
         Err(e) => {
             println!("⚠️  Could not decode app hash from fixture: {}", e);
-            println!("✅ Test structure validated for fixture: {}", fixture.scenario);
+            println!(
+                "✅ Test structure validated for fixture: {}",
+                fixture.scenario
+            );
             return None;
         }
     };
-    
+
     if app_hash_bytes.len() < 32 {
         println!("⚠️  App hash too short: {} bytes", app_hash_bytes.len());
-        println!("✅ Test structure validated for fixture: {}", fixture.scenario);
+        println!(
+            "✅ Test structure validated for fixture: {}",
+            fixture.scenario
+        );
         return None;
     }
-    
+
     let mut app_hash = [0u8; 32];
     app_hash.copy_from_slice(&app_hash_bytes[..32]);
 
@@ -163,10 +163,16 @@ fn execute_membership(ctx: &TestContext) -> Result<(), MembershipError> {
 fn assert_membership_success(ctx: &TestContext) {
     match execute_membership(ctx) {
         Ok(()) => {
-            println!("✅ Membership verification succeeded for {}", ctx.fixture.scenario);
+            println!(
+                "✅ Membership verification succeeded for {}",
+                ctx.fixture.scenario
+            );
         }
         Err(e) => {
-            panic!("❌ Expected success but failed for {}: {:?}", ctx.fixture.scenario, e);
+            panic!(
+                "❌ Expected success but failed for {}: {:?}",
+                ctx.fixture.scenario, e
+            );
         }
     }
 }
@@ -176,10 +182,16 @@ fn assert_membership_success(ctx: &TestContext) {
 fn assert_membership_failure(ctx: &TestContext) {
     match execute_membership(ctx) {
         Ok(()) => {
-            panic!("❌ Expected failure but succeeded for {}", ctx.fixture.scenario);
+            panic!(
+                "❌ Expected failure but succeeded for {}",
+                ctx.fixture.scenario
+            );
         }
         Err(e) => {
-            println!("✅ Membership verification correctly failed for {} with: {:?}", ctx.fixture.scenario, e);
+            println!(
+                "✅ Membership verification correctly failed for {} with: {:?}",
+                ctx.fixture.scenario, e
+            );
         }
     }
 }
@@ -188,19 +200,29 @@ fn assert_membership_failure(ctx: &TestContext) {
 fn test_verify_membership_happy_path() {
     // This test is expected to fail until fixtures are properly generated and the proof format issue is resolved
     let fixture = load_membership_predefined_key_fixture();
-    
-    let Some(ctx) = setup_test_context(fixture) else { return };
-    
+
+    let Some(ctx) = setup_test_context(fixture) else {
+        return;
+    };
+
     // TODO: This test is expected to fail initially due to the ABCI ProofOps vs MerkleProof format issue
     // For now, we expect this to fail and treat that as success (testing the test infrastructure)
     match execute_membership(&ctx) {
         Ok(()) => {
-            println!("✅ Membership verification unexpectedly succeeded for {}", ctx.fixture.scenario);
+            println!(
+                "✅ Membership verification unexpectedly succeeded for {}",
+                ctx.fixture.scenario
+            );
             println!("   This means the fixture format issue has been resolved!");
         }
         Err(e) => {
-            println!("❌ Membership verification failed for {} with: {:?}", ctx.fixture.scenario, e);
-            println!("   This matches the expected behavior - we have a fixture generator issue to fix");
+            println!(
+                "❌ Membership verification failed for {} with: {:?}",
+                ctx.fixture.scenario, e
+            );
+            println!(
+                "   This matches the expected behavior - we have a fixture generator issue to fix"
+            );
             println!("   The test infrastructure is working correctly");
         }
     }
