@@ -5,7 +5,10 @@ use std::fs;
 use std::path::Path;
 
 use tendermint_light_client_membership::{membership, KVPair, MembershipError};
-use ibc_core_commitment_types::merkle::MerkleProof;
+use ibc_core_commitment_types::{merkle::MerkleProof, proto::ics23::CommitmentProof};
+use tendermint::merkle::proof::ProofOps;
+use prost::Message;
+use tendermint_proto::{crypto, Protobuf};
 
 // Include the fixtures and helpers directly in this file
 
@@ -77,14 +80,20 @@ impl From<&MembershipMsgFixture> for KVPair {
     }
 }
 
-/// Convert hex string to MerkleProof (placeholder implementation)
+/// Convert hex string to MerkleProof using proper protobuf deserialization
 fn hex_to_merkle_proof(hex_str: &str) -> MerkleProof {
-    let _bytes = hex::decode(hex_str).expect("valid hex");
-    // TODO: Implement proper protobuf deserialization for MerkleProof
-    // For now, create a minimal proof structure
-    MerkleProof {
-        proofs: vec![], // This would need proper deserialization
+    let bytes = hex::decode(hex_str).expect("valid hex");
+    let tm_proof_ops: ProofOps = Protobuf::<crypto::ProofOps>::decode(&*bytes).expect("valid ProofOps");
+    
+    // Convert Tendermint ProofOps to ICS MerkleProof
+    let mut proofs = Vec::with_capacity(tm_proof_ops.ops.len());
+    for op in &tm_proof_ops.ops {
+        let mut parsed = CommitmentProof { proof: None };
+        prost::Message::merge(&mut parsed, op.data.as_slice()).expect("valid commitment proof");
+        proofs.push(parsed);
     }
+    
+    MerkleProof { proofs }
 }
 
 /// Load a membership fixture from the fixtures directory

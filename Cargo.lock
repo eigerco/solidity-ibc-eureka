@@ -7784,8 +7784,11 @@ dependencies = [
  "hex",
  "ibc-core-commitment-types",
  "ibc-core-host-types",
+ "prost",
  "serde",
  "serde_json",
+ "tendermint",
+ "tendermint-proto",
  "thiserror 2.0.12",
 ]
 
