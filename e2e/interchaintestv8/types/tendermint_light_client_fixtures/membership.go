@@ -23,6 +23,12 @@ import (
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/e2esuite"
 )
 
+// KeyPath represents a key path with its expected membership status
+type KeyPath struct {
+	Key        string
+	Membership bool
+}
+
 // MembershipFixtureGenerator handles generation of membership verification test scenarios
 type MembershipFixtureGenerator struct {
 	generator FixtureGeneratorInterface
@@ -36,15 +42,19 @@ func NewMembershipFixtureGenerator(generator FixtureGeneratorInterface) *Members
 }
 
 // GenerateMembershipVerificationScenariosWithPredefinedKeys generates membership fixtures using predefined keys
-func (g *MembershipFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
+func (g *MembershipFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []KeyPath) {
 	if !g.generator.IsEnabled() {
 		return
 	}
 	g.generator.LogInfo("🔧 Generating membership verification scenarios with predefined keys")
 
-	for i, keyPath := range keyPaths {
-		g.generator.LogInfof("🔍 Processing predefined key path: %s", keyPath)
-		g.generateMembershipFixtureForKey(ctx, chainA, keyPath, i)
+	for i, keySpec := range keyPaths {
+		membershipType := "membership"
+		if !keySpec.Membership {
+			membershipType = "non-membership"
+		}
+		g.generator.LogInfof("🔍 Processing predefined key path: %s (%s)", keySpec.Key, membershipType)
+		g.generateMembershipFixtureForKey(ctx, chainA, keySpec.Key, i)
 	}
 
 	g.generator.LogInfo("✅ Predefined key membership scenarios generated successfully")
@@ -78,17 +88,18 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	abciResp, err := e2esuite.ABCIQuery(ctx, chainA, abciReq)
 	g.generator.RequireNoError(err)
 
-	if len(abciResp.Value) == 0 {
-		g.generator.LogInfof("⚠️  ABCI value is empty for key: %s, skipping", keyPath)
-		return
+	// Determine if this is a membership (value exists) or non-membership (value empty) case
+	isMembership := len(abciResp.Value) > 0
+	if isMembership {
+		g.generator.LogInfof("✅ ABCI query successful - MEMBERSHIP case: value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
+	} else {
+		g.generator.LogInfof("✅ ABCI query successful - NON-MEMBERSHIP case: empty value, proof ops: %d", len(abciResp.ProofOps.Ops))
 	}
 
 	if len(abciResp.ProofOps.Ops) == 0 {
 		g.generator.LogInfof("⚠️  ABCI proof is empty for key: %s, skipping", keyPath)
 		return
 	}
-
-	g.generator.LogInfof("✅ ABCI query successful - value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
 
 	// TODO: Convert ABCI proof operations to IBC MerkleProof format
 	// For now, use the original approach but add detailed logging to understand the structure
@@ -177,7 +188,14 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
 	g.generator.RequireNoError(err)
 
-	// Create the membership proof message
+	// Create the membership/non-membership proof message
+	proofType := "membership"
+	description := fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)
+	if !isMembership {
+		proofType = "non-membership"
+		description = fmt.Sprintf("Valid non-membership proof for predefined key: %s", keyPath)
+	}
+
 	membershipMsg := map[string]interface{}{
 		"height":             proofHeight,
 		"delay_time_period":  0,
@@ -185,7 +203,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 		"proof":              hex.EncodeToString(proofBytes),
 		"path":               []string{string(ibcexported.StoreKey), keyPath}, // Include IBC store prefix like SP1
 		"value":              hex.EncodeToString(abciResp.Value),
-		"metadata":           g.generator.CreateMetadata(fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)),
+		"metadata":           g.generator.CreateMetadata(description),
 	}
 
 	// Get client state for context
@@ -199,22 +217,24 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 		"metadata":             g.generator.CreateMetadata(fmt.Sprintf("Consensus state at height %d", proofHeight)),
 	}
 
+	scenarioName := fmt.Sprintf("%s_predefined_key_%d", proofType, index)
 	unifiedFixture := map[string]interface{}{
-		"scenario":        fmt.Sprintf("membership_predefined_key_%d", index),
+		"scenario":        scenarioName,
 		"client_state":    clientStateMap,
 		"consensus_state": consensusStateMap,
 		"membership_msg":  membershipMsg,
 		"key_info": map[string]interface{}{
 			"path":        keyPath,
 			"value_size":  len(abciResp.Value),
-			"description": fmt.Sprintf("Predefined IBC key: %s", keyPath),
+			"description": fmt.Sprintf("Predefined IBC key: %s (%s)", keyPath, proofType),
+			"proof_type":  proofType,
 		},
-		"metadata": g.generator.CreateUnifiedMetadata(fmt.Sprintf("membership_predefined_key_%d", index), chainA.Config().ChainID),
+		"metadata": g.generator.CreateUnifiedMetadata(scenarioName, chainA.Config().ChainID),
 	}
 
-	filename := filepath.Join(g.generator.GetFixtureDir(), fmt.Sprintf("verify_membership_predefined_key_%d.json", index))
+	filename := filepath.Join(g.generator.GetFixtureDir(), fmt.Sprintf("verify_%s_predefined_key_%d.json", proofType, index))
 	g.generator.SaveJsonFixture(filename, unifiedFixture)
-	g.generator.LogInfof("💾 Predefined key membership fixture saved: %s", filename)
+	g.generator.LogInfof("💾 Predefined key %s fixture saved: %s", proofType, filename)
 }
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format

@@ -15,6 +15,8 @@ import (
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/types/tendermint_light_client_fixtures"
 )
 
+type KeyPath = tendermint_light_client_fixtures.KeyPath
+
 // TendermintLightClientFixtureGenerator manages fixture generation for tendermint light client tests
 type TendermintLightClientFixtureGenerator struct {
 	Enabled    bool
@@ -145,6 +147,6 @@ func (g *TendermintLightClientFixtureGenerator) GenerateMultipleUpdateClientScen
 }
 
 // GenerateMembershipVerificationScenariosWithPredefinedKeys delegates to the membership submodule
-func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
+func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []KeyPath) {
 	g.membershipGenerator.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, chainA, keyPaths)
 }

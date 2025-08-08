@@ -588,12 +588,12 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 
 			s.T().Log("🔧 Generating membership verification fixtures using predefined keys")
 
-			// Use predefined keys that we know exist in the IBC store, similar to SP1 approach
-			// These are common IBC keys that should be available after client creation
-			predefinedKeys := []string{
-				"clients/" + ibctesting.FirstClientID + "/clientState",
-				"clients/" + ibctesting.FirstClientID + "/consensusStates",
+			predefinedKeys := []e2etypes.KeyPath{
+				{Key: "clients/07-tendermint-0/clientState", Membership: true},   // membership: exists
+				{Key: "clients/07-tendermint-001/clientState", Membership: false}, // non-membership: doesn't exist
 			}
+
+			s.Require().Equal("clients/07-tendermint-0/clientState", "clients/"+ibctesting.FirstClientID+"/clientState", "we expect the first client to be clients/07-tendermint-0/clientState")
 
 			s.TendermintLightClientFixtures.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, s.SimdA, predefinedKeys)
 		}))
