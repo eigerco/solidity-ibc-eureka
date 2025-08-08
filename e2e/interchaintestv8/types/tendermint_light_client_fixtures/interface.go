@@ -34,8 +34,8 @@ type FixtureGeneratorInterface interface {
 	QueryTendermintConsensusState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ConsensusState
 
 	// Conversion methods
-	ConvertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{}
-	ConvertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{}
+	ConvertClientStateToFixtureFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{}
+	ConvertConsensusStateToFixtureFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{}
 
 	// Metadata creation methods
 	CreateMetadata(description string) map[string]interface{}

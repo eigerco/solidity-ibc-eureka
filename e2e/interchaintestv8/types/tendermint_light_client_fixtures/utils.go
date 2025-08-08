@@ -125,7 +125,7 @@ func (u *FixtureGeneratorUtils) QueryTendermintConsensusState(ctx context.Contex
 
 // Conversion methods
 
-func (u *FixtureGeneratorUtils) ConvertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
+func (u *FixtureGeneratorUtils) ConvertClientStateToFixtureFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
 	return map[string]interface{}{
 		"chain_id":                tmClientState.ChainId,
 		"trust_level_numerator":   tmClientState.TrustLevel.Numerator,
@@ -139,7 +139,7 @@ func (u *FixtureGeneratorUtils) ConvertClientStateToSolanaFormat(tmClientState *
 	}
 }
 
-func (u *FixtureGeneratorUtils) ConvertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
+func (u *FixtureGeneratorUtils) ConvertConsensusStateToFixtureFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
 	return map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),

@@ -121,12 +121,12 @@ func (g *TendermintLightClientFixtureGenerator) QueryTendermintConsensusState(ct
 }
 
 // Conversion methods
-func (g *TendermintLightClientFixtureGenerator) ConvertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
-	return g.utils.ConvertClientStateToSolanaFormat(tmClientState, chainID)
+func (g *TendermintLightClientFixtureGenerator) ConvertClientStateToFixtureFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
+	return g.utils.ConvertClientStateToFixtureFormat(tmClientState, chainID)
 }
 
-func (g *TendermintLightClientFixtureGenerator) ConvertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
-	return g.utils.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainID)
+func (g *TendermintLightClientFixtureGenerator) ConvertConsensusStateToFixtureFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
+	return g.utils.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainID)
 }
 
 // Metadata creation methods
@@ -169,12 +169,12 @@ func (g *TendermintLightClientFixtureGenerator) queryTendermintConsensusState(ct
 
 // convertClientStateToSolanaFormat - backward compatibility
 func (g *TendermintLightClientFixtureGenerator) convertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
-	return g.ConvertClientStateToSolanaFormat(tmClientState, chainID)
+	return g.ConvertClientStateToFixtureFormat(tmClientState, chainID)
 }
 
 // convertConsensusStateToSolanaFormat - backward compatibility
 func (g *TendermintLightClientFixtureGenerator) convertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
-	return g.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainID)
+	return g.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainID)
 }
 
 // saveJsonFixture - backward compatibility

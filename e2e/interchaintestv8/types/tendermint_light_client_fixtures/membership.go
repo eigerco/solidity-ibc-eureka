@@ -205,9 +205,9 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 
 	// Get client state for context
 	tmClientStatePtr := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientStatePtr, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientStatePtr, chainA.Config().ChainID)
 
-	solanaConsensusState := map[string]interface{}{
+	consensusStateMap := map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
 		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
@@ -216,8 +216,8 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 
 	unifiedFixture := map[string]interface{}{
 		"scenario":        fmt.Sprintf("membership_predefined_key_%d", index),
-		"client_state":    solanaClientState,
-		"consensus_state": solanaConsensusState,
+		"client_state":    clientStateMap,
+		"consensus_state": consensusStateMap,
 		"membership_msg":  membershipMsg,
 		"key_info": map[string]interface{}{
 			"path":        keyPath,
@@ -315,9 +315,9 @@ func (g *MembershipFixtureGenerator) generateMembershipHappyPath(ctx context.Con
 
 	// Get client state for context
 	tmClientStatePtr := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientStatePtr, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientStatePtr, chainA.Config().ChainID)
 
-	solanaConsensusState := map[string]interface{}{
+	consensusStateMap := map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
 		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
@@ -326,8 +326,8 @@ func (g *MembershipFixtureGenerator) generateMembershipHappyPath(ctx context.Con
 
 	unifiedFixture := map[string]interface{}{
 		"scenario":        "membership_happy_path",
-		"client_state":    solanaClientState,
-		"consensus_state": solanaConsensusState,
+		"client_state":    clientStateMap,
+		"consensus_state": consensusStateMap,
 		"membership_msg":  membershipMsg,
 		"packet_info": map[string]interface{}{
 			"sequence":         packet.Sequence,

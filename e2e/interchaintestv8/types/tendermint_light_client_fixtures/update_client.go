@@ -78,20 +78,20 @@ func (g *UpdateClientFixtureGenerator) generateHappyPathScenario(ctx context.Con
 
 	// Get the client state
 	tmClientState := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientState, chainA.Config().ChainID)
 
 	// Get the consensus state (this would be the trusted state)
 	tmConsensusState := g.generator.QueryTendermintConsensusState(ctx, chainA)
-	solanaConsensusState := g.generator.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainA.Config().ChainID)
+	consensusStateMap := g.generator.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainA.Config().ChainID)
 
 	// Process the real update client message from the transaction
-	realUpdateMessage := g.convertUpdateClientMessageToSolanaFormat(clientMessage)
+	realUpdateMessage := g.convertUpdateClientMessageToFixtureFormat(clientMessage)
 
 	// Create the unified fixture
 	unifiedFixture := map[string]interface{}{
 		"scenario":                "happy_path",
-		"client_state":            solanaClientState,
-		"trusted_consensus_state": solanaConsensusState,
+		"client_state":            clientStateMap,
+		"trusted_consensus_state": consensusStateMap,
 		"update_client_message":   realUpdateMessage,
 		"metadata":                g.generator.CreateUnifiedMetadata("happy_path", tmClientState.ChainId),
 	}
@@ -106,10 +106,10 @@ func (g *UpdateClientFixtureGenerator) generateMalformedClientMessageScenario(ct
 
 	// Get valid client state and consensus state (same as happy path)
 	tmClientState := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientState, chainA.Config().ChainID)
 
 	tmConsensusState := g.generator.QueryTendermintConsensusState(ctx, chainA)
-	solanaConsensusState := g.generator.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainA.Config().ChainID)
+	consensusStateMap := g.generator.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainA.Config().ChainID)
 
 	// Load the happy path fixture to base the malformed one on
 	happyPathFile := filepath.Join(g.generator.GetFixtureDir(), "update_client_happy_path.json")
@@ -132,8 +132,8 @@ func (g *UpdateClientFixtureGenerator) generateMalformedClientMessageScenario(ct
 	// Create the unified fixture
 	unifiedFixture := map[string]interface{}{
 		"scenario":                "malformed_client_message",
-		"client_state":            solanaClientState,
-		"trusted_consensus_state": solanaConsensusState,
+		"client_state":            clientStateMap,
+		"trusted_consensus_state": consensusStateMap,
 		"update_client_message":   malformedUpdateMessage,
 		"metadata":                g.generator.CreateUnifiedMetadata("malformed_client_message", tmClientState.ChainId),
 	}
@@ -143,7 +143,7 @@ func (g *UpdateClientFixtureGenerator) generateMalformedClientMessageScenario(ct
 	g.generator.LogInfof("💾 Malformed client message scenario fixture saved: %s", filename)
 }
 
-func (g *UpdateClientFixtureGenerator) convertUpdateClientMessageToSolanaFormat(clientMessage *types.Any) map[string]interface{} {
+func (g *UpdateClientFixtureGenerator) convertUpdateClientMessageToFixtureFormat(clientMessage *types.Any) map[string]interface{} {
 	headerBytes := clientMessage.Value
 
 	// Parse the header to extract the new height information
@@ -252,10 +252,10 @@ func (g *UpdateClientFixtureGenerator) generateExpiredHeaderScenario(ctx context
 
 	// Get valid client state and consensus state
 	tmClientState := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientState, chainA.Config().ChainID)
 
 	tmConsensusState := g.generator.QueryTendermintConsensusState(ctx, chainA)
-	solanaConsensusState := g.generator.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainA.Config().ChainID)
+	consensusStateMap := g.generator.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainA.Config().ChainID)
 
 	// Load the happy path fixture to base the expired one on
 	happyPathFile := filepath.Join(g.generator.GetFixtureDir(), "update_client_happy_path.json")
@@ -276,8 +276,8 @@ func (g *UpdateClientFixtureGenerator) generateExpiredHeaderScenario(ctx context
 
 	unifiedFixture := map[string]interface{}{
 		"scenario":                "expired_header",
-		"client_state":            solanaClientState,
-		"trusted_consensus_state": solanaConsensusState,
+		"client_state":            clientStateMap,
+		"trusted_consensus_state": consensusStateMap,
 		"update_client_message":   expiredUpdateMessage,
 		"metadata":                g.generator.CreateUnifiedMetadata("expired_header", tmClientState.ChainId),
 	}
@@ -292,10 +292,10 @@ func (g *UpdateClientFixtureGenerator) generateFutureTimestampScenario(ctx conte
 	g.generator.LogInfo("🔧 Generating future timestamp scenario")
 
 	tmClientState := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientState, chainA.Config().ChainID)
 
 	tmConsensusState := g.generator.QueryTendermintConsensusState(ctx, chainA)
-	solanaConsensusState := g.generator.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainA.Config().ChainID)
+	consensusStateMap := g.generator.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainA.Config().ChainID)
 
 	happyPathFile := filepath.Join(g.generator.GetFixtureDir(), "update_client_happy_path.json")
 	g.generator.RequireFileExists(happyPathFile)
@@ -315,8 +315,8 @@ func (g *UpdateClientFixtureGenerator) generateFutureTimestampScenario(ctx conte
 
 	unifiedFixture := map[string]interface{}{
 		"scenario":                "future_timestamp",
-		"client_state":            solanaClientState,
-		"trusted_consensus_state": solanaConsensusState,
+		"client_state":            clientStateMap,
+		"trusted_consensus_state": consensusStateMap,
 		"update_client_message":   futureUpdateMessage,
 		"metadata":                g.generator.CreateUnifiedMetadata("future_timestamp", tmClientState.ChainId),
 	}
@@ -331,10 +331,10 @@ func (g *UpdateClientFixtureGenerator) generateWrongTrustedHeightScenario(ctx co
 	g.generator.LogInfo("🔧 Generating wrong trusted height scenario")
 
 	tmClientState := g.generator.QueryTendermintClientState(ctx, chainA)
-	solanaClientState := g.generator.ConvertClientStateToSolanaFormat(tmClientState, chainA.Config().ChainID)
+	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientState, chainA.Config().ChainID)
 
 	tmConsensusState := g.generator.QueryTendermintConsensusState(ctx, chainA)
-	solanaConsensusState := g.generator.ConvertConsensusStateToSolanaFormat(tmConsensusState, chainA.Config().ChainID)
+	consensusStateMap := g.generator.ConvertConsensusStateToFixtureFormat(tmConsensusState, chainA.Config().ChainID)
 
 	happyPathFile := filepath.Join(g.generator.GetFixtureDir(), "update_client_happy_path.json")
 	g.generator.RequireFileExists(happyPathFile)
@@ -352,8 +352,8 @@ func (g *UpdateClientFixtureGenerator) generateWrongTrustedHeightScenario(ctx co
 
 	unifiedFixture := map[string]interface{}{
 		"scenario":                "wrong_trusted_height",
-		"client_state":            solanaClientState,
-		"trusted_consensus_state": solanaConsensusState,
+		"client_state":            clientStateMap,
+		"trusted_consensus_state": consensusStateMap,
 		"update_client_message":   wrongHeightUpdateMessage,
 		"metadata":                g.generator.CreateUnifiedMetadata("wrong_trusted_height", tmClientState.ChainId),
 	}
