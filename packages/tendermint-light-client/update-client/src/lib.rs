@@ -8,7 +8,18 @@
     unused_crate_dependencies
 )]
 
+use hex as _;
+use serde as _;
+use serde_json as _;
+use tendermint as _;
+
 pub mod types;
+
+#[cfg(test)]
+mod fixtures;
+
+#[cfg(test)]
+mod tests;
 
 use std::{str::FromStr, time::Duration};
 

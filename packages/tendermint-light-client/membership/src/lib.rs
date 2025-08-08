@@ -7,6 +7,16 @@
     unused_crate_dependencies
 )]
 
+#[cfg(test)]
+mod fixtures;
+
+#[cfg(test)]
+mod tests;
+
+use hex as _;
+use serde as _;
+use serde_json as _;
+
 use ibc_core_commitment_types::{
     commitment::CommitmentRoot,
     merkle::{MerklePath, MerkleProof},

@@ -51,6 +51,8 @@ const (
 	EnvKeyGenerateWasmFixtures = "GENERATE_WASM_FIXTURES"
 	// EnvKeyGenerateSolanaFixtures Generate fixtures for the solana tests if set to true.
 	EnvKeyGenerateSolanaFixtures = "GENERATE_SOLANA_FIXTURES"
+	// EnvKeyGenerateTendermintLightClientFixtures Generate fixtures for the tendermint light client tests if set to true.
+	EnvKeyGenerateTendermintLightClientFixtures = "GENERATE_TENDERMINT_LIGHT_CLIENT_FIXTURES"
 	// The log level for the Rust logger.
 	EnvKeyRustLog = "RUST_LOG"
 
@@ -119,6 +121,8 @@ const (
 	SolanaLedgerDir = "test-ledger"
 	// SolanaFixturesDir is the directory where the Solana fixtures are stored.
 	SolanaFixturesDir = "programs/solana/tests/fixtures/"
+	// TendermintLightClientFixturesDir is the directory where the Tendermint light client fixtures are stored.
+	TendermintLightClientFixturesDir = "packages/tendermint-light-client/fixtures/"
 
 	// IbcCommitmentSlotHex is the storage slot in the IBC solidity contract for the IBC commitments.
 	IbcCommitmentSlotHex = ics26router.IbcStoreStorageSlot

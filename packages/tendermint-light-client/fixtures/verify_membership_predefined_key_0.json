@@ -1,0 +1,56 @@
+{
+  "client_state": {
+    "chain_id": "simd-2",
+    "frozen_height": 0,
+    "latest_height": 39,
+    "max_clock_drift": 15,
+    "metadata": {
+      "description": "Client state for simd-2 captured from simd-1",
+      "generated_at": "2025-08-08T08:38:47Z",
+      "source": "real_cosmos_chain"
+    },
+    "trust_level_denominator": 3,
+    "trust_level_numerator": 1,
+    "trusting_period": 1209600,
+    "unbonding_period": 1814400
+  },
+  "consensus_state": {
+    "metadata": {
+      "description": "Consensus state at height 39",
+      "generated_at": "2025-08-08T08:38:47Z",
+      "source": "real_cosmos_chain"
+    },
+    "next_validators_hash": "9bcf1a066bbfab102ddd3ece24208d01610e6dc5305eac1069d991772a43681c",
+    "root": "72fcbec6c3611a5638f6ca4695e963ba92dda63047950bd83f6866cd79b97403",
+    "timestamp": 1754642311497465710
+  },
+  "key_info": {
+    "description": "Predefined IBC key: clients/07-tendermint-0/clientState",
+    "path": "clients/07-tendermint-0/clientState",
+    "value_size": 166
+  },
+  "membership_msg": {
+    "delay_block_period": 0,
+    "delay_time_period": 0,
+    "height": 39,
+    "metadata": {
+      "description": "Valid membership proof for predefined key: clients/07-tendermint-0/clientState",
+      "generated_at": "2025-08-08T08:38:47Z",
+      "source": "real_cosmos_chain"
+    },
+    "path": [
+      "ibc",
+      "clients/07-tendermint-0/clientState"
+    ],
+    "proof": "0a90030a8d030a23636c69656e74732f30372d74656e6465726d696e742d302f636c69656e74537461746512a6010a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512770a0673696d642d321204080110031a040880ea4922040880df6e2a02080f32003a040802101542190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a10757067726164656449424353746174651a0b0801180120012a0300022c22290801122502042c20545e6f89c4f17d1556dc632ef9438d592328ac96d1fb7571e1839e46bbb7639220222b0801120404082c201a2120fa08014eff8bcd4e6ce1e81ff4f75335e8aa18b6166e4484071f41d98dfba536222b08011204060e38201a2120a414ea4b80d0246d19f23cd9deec012b9ed86da3b297d0e0169a27a0b28069f1222b08011204081c38201a2120fd9babe21f1324ab242e01763e67b3103cd4bdf771b563fd39c654eeedcc59790afe010afb010a036962631220f0c37c01f99e464275eb36a847298bb49f432298043c4873498367b68aa04b211a090801180120012a0100222708011201011a202cd8b50700950546180ad979135a8708c2ea2098fff6ade31b7e40eb5dcf7c05222708011201011a2052f0e3606ac93395f911c6ecbd74ad0590ab91e7abf362e35d646cc47339a7262225080112210145200ede8ef052cfbedfe67fec7543b9613b67fc4db486f35d7e476d74726b1822250801122101d5ffccd4ee92b3a8a753d95496640c2ae919a688c0f3c34f89fc8ad57300af52222708011201011a205180eaeb7996d8259d8965309e59c882a9583fe6ed03221e8bf11236d5bf4bb5",
+    "value": "0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512770a0673696d642d321204080110031a040880ea4922040880df6e2a02080f32003a040802101542190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465"
+  },
+  "metadata": {
+    "chain_id": "simd-1",
+    "description": "Unified update client fixture for scenario: membership_predefined_key_0",
+    "generated_at": "2025-08-08T08:38:47Z",
+    "scenario": "membership_predefined_key_0",
+    "source": "real_cosmos_chain"
+  },
+  "scenario": "membership_predefined_key_0"
+}

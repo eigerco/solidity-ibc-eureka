@@ -32,36 +32,36 @@ import (
 	"github.com/srdtrk/solidity-ibc-eureka/e2e/v8/testvalues"
 )
 
-type SolanaFixtureGenerator struct {
+type TendermintLightClientFixtureGenerator struct {
 	Enabled    bool
 	FixtureDir string
 	suite      *suite.Suite
 }
 
-func NewSolanaFixtureGenerator(s *suite.Suite) *SolanaFixtureGenerator {
-	generator := &SolanaFixtureGenerator{
-		Enabled: os.Getenv(testvalues.EnvKeyGenerateSolanaFixtures) == testvalues.EnvValueGenerateFixtures_True,
+func NewTendermintLightClientFixtureGenerator(s *suite.Suite) *TendermintLightClientFixtureGenerator {
+	generator := &TendermintLightClientFixtureGenerator{
+		Enabled: os.Getenv(testvalues.EnvKeyGenerateTendermintLightClientFixtures) == testvalues.EnvValueGenerateFixtures_True,
 		suite:   s,
 	}
 
 	if generator.Enabled {
-		absPath, err := filepath.Abs(filepath.Join("../..", testvalues.SolanaFixturesDir))
+		absPath, err := filepath.Abs(filepath.Join("../..", testvalues.TendermintLightClientFixturesDir))
 		if err != nil {
 			s.T().Fatalf("Failed to get absolute path for fixtures: %v", err)
 		}
 		generator.FixtureDir = absPath
 
 		if err := os.MkdirAll(generator.FixtureDir, 0o755); err != nil {
-			s.T().Fatalf("Failed to create Solana fixture directory: %v", err)
+			s.T().Fatalf("Failed to create Tendermint light client fixture directory: %v", err)
 		}
-		s.T().Logf("📁 Solana fixtures will be saved to: %s", generator.FixtureDir)
+		s.T().Logf("📁 Tendermint light client fixtures will be saved to: %s", generator.FixtureDir)
 	}
 
 	return generator
 }
 
 // GenerateMultipleUpdateClientScenarios generates multiple test scenarios
-func (g *SolanaFixtureGenerator) GenerateMultipleUpdateClientScenarios(ctx context.Context, chainA *cosmos.CosmosChain, updateTxBodyBz []byte) {
+func (g *TendermintLightClientFixtureGenerator) GenerateMultipleUpdateClientScenarios(ctx context.Context, chainA *cosmos.CosmosChain, updateTxBodyBz []byte) {
 	if !g.Enabled {
 		return
 	}
@@ -89,7 +89,7 @@ func (g *SolanaFixtureGenerator) GenerateMultipleUpdateClientScenarios(ctx conte
 	g.suite.T().Log("✅ Multiple Solana scenarios generated successfully")
 }
 
-func (g *SolanaFixtureGenerator) extractUpdateClientMessage(txBodyBz []byte) *clienttypes.MsgUpdateClient {
+func (g *TendermintLightClientFixtureGenerator) extractUpdateClientMessage(txBodyBz []byte) *clienttypes.MsgUpdateClient {
 	var txBody txtypes.TxBody
 	err := proto.Unmarshal(txBodyBz, &txBody)
 	g.suite.Require().NoError(err)
@@ -103,7 +103,7 @@ func (g *SolanaFixtureGenerator) extractUpdateClientMessage(txBodyBz []byte) *cl
 	return &msgUpdateClient
 }
 
-func (g *SolanaFixtureGenerator) generateHappyPathScenario(ctx context.Context, chainA *cosmos.CosmosChain, clientMessage *types.Any) {
+func (g *TendermintLightClientFixtureGenerator) generateHappyPathScenario(ctx context.Context, chainA *cosmos.CosmosChain, clientMessage *types.Any) {
 	g.suite.T().Log("🔧 Generating happy path scenario")
 
 	// Get the client state
@@ -131,7 +131,7 @@ func (g *SolanaFixtureGenerator) generateHappyPathScenario(ctx context.Context, 
 	g.suite.T().Logf("💾 Happy path scenario fixture saved: %s", filename)
 }
 
-func (g *SolanaFixtureGenerator) generateMalformedClientMessageScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+func (g *TendermintLightClientFixtureGenerator) generateMalformedClientMessageScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating malformed client message scenario")
 
 	// Get valid client state and consensus state (same as happy path)
@@ -173,7 +173,7 @@ func (g *SolanaFixtureGenerator) generateMalformedClientMessageScenario(ctx cont
 	g.suite.T().Logf("💾 Malformed client message scenario fixture saved: %s", filename)
 }
 
-func (g *SolanaFixtureGenerator) convertUpdateClientMessageToSolanaFormat(clientMessage *types.Any) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) convertUpdateClientMessageToSolanaFormat(clientMessage *types.Any) map[string]interface{} {
 	headerBytes := clientMessage.Value
 
 	// Parse the header to extract the new height information
@@ -199,7 +199,7 @@ func (g *SolanaFixtureGenerator) convertUpdateClientMessageToSolanaFormat(client
 }
 
 // extractHexFromHappyPathFixture loads the happy path fixture and extracts the client_message_hex
-func (g *SolanaFixtureGenerator) extractHexFromHappyPathFixture(filePath string) string {
+func (g *TendermintLightClientFixtureGenerator) extractHexFromHappyPathFixture(filePath string) string {
 	data, err := os.ReadFile(filePath)
 	g.suite.Require().NoError(err, "Failed to read happy path fixture")
 
@@ -218,7 +218,7 @@ func (g *SolanaFixtureGenerator) extractHexFromHappyPathFixture(filePath string)
 
 // corruptSignatureInValidHeader takes a valid header hex and corrupts signature bytes
 // This creates a valid protobuf structure that will deserialize correctly but fail cryptographic verification
-func (g *SolanaFixtureGenerator) corruptSignatureInValidHeader(validHex string) string {
+func (g *TendermintLightClientFixtureGenerator) corruptSignatureInValidHeader(validHex string) string {
 	// Decode the hex string to bytes
 	headerBytes, err := hex.DecodeString(validHex)
 	if err != nil {
@@ -276,7 +276,7 @@ func (g *SolanaFixtureGenerator) corruptSignatureInValidHeader(validHex string) 
 	return hex.EncodeToString(corruptedBytes)
 }
 
-func (g *SolanaFixtureGenerator) queryTendermintClientState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ClientState {
+func (g *TendermintLightClientFixtureGenerator) queryTendermintClientState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ClientState {
 	resp, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
 		ClientId: ibctesting.FirstClientID,
 	})
@@ -290,7 +290,7 @@ func (g *SolanaFixtureGenerator) queryTendermintClientState(ctx context.Context,
 	return &tmClientState
 }
 
-func (g *SolanaFixtureGenerator) convertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) convertClientStateToSolanaFormat(tmClientState *ibctmtypes.ClientState, chainID string) map[string]interface{} {
 	return map[string]interface{}{
 		"chain_id":                tmClientState.ChainId,
 		"trust_level_numerator":   tmClientState.TrustLevel.Numerator,
@@ -304,7 +304,7 @@ func (g *SolanaFixtureGenerator) convertClientStateToSolanaFormat(tmClientState 
 	}
 }
 
-func (g *SolanaFixtureGenerator) queryTendermintConsensusState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ConsensusState {
+func (g *TendermintLightClientFixtureGenerator) queryTendermintConsensusState(ctx context.Context, chainA *cosmos.CosmosChain) *ibctmtypes.ConsensusState {
 	resp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
 		ClientId:       ibctesting.FirstClientID,
 		RevisionNumber: 1,
@@ -321,7 +321,7 @@ func (g *SolanaFixtureGenerator) queryTendermintConsensusState(ctx context.Conte
 	return &tmConsensusState
 }
 
-func (g *SolanaFixtureGenerator) convertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) convertConsensusStateToSolanaFormat(tmConsensusState *ibctmtypes.ConsensusState, chainID string) map[string]interface{} {
 	return map[string]interface{}{
 		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
 		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
@@ -330,7 +330,7 @@ func (g *SolanaFixtureGenerator) convertConsensusStateToSolanaFormat(tmConsensus
 	}
 }
 
-func (g *SolanaFixtureGenerator) saveJsonFixture(filename string, data interface{}) {
+func (g *TendermintLightClientFixtureGenerator) saveJsonFixture(filename string, data interface{}) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	g.suite.Require().NoError(err)
 
@@ -338,7 +338,7 @@ func (g *SolanaFixtureGenerator) saveJsonFixture(filename string, data interface
 	g.suite.Require().NoError(err)
 }
 
-func (g *SolanaFixtureGenerator) createMetadata(description string) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) createMetadata(description string) map[string]interface{} {
 	return map[string]interface{}{
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"source":       "real_cosmos_chain",
@@ -346,7 +346,7 @@ func (g *SolanaFixtureGenerator) createMetadata(description string) map[string]i
 	}
 }
 
-func (g *SolanaFixtureGenerator) createUnifiedMetadata(scenarioName, chainID string) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) createUnifiedMetadata(scenarioName, chainID string) map[string]interface{} {
 	return map[string]interface{}{
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"source":       "real_cosmos_chain",
@@ -357,7 +357,7 @@ func (g *SolanaFixtureGenerator) createUnifiedMetadata(scenarioName, chainID str
 }
 
 // generateExpiredHeaderScenario creates a fixture with an expired header (beyond trusting period)
-func (g *SolanaFixtureGenerator) generateExpiredHeaderScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+func (g *TendermintLightClientFixtureGenerator) generateExpiredHeaderScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating expired header scenario")
 
 	// Get valid client state and consensus state
@@ -398,7 +398,7 @@ func (g *SolanaFixtureGenerator) generateExpiredHeaderScenario(ctx context.Conte
 }
 
 // generateFutureTimestampScenario creates a fixture with a future timestamp
-func (g *SolanaFixtureGenerator) generateFutureTimestampScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+func (g *TendermintLightClientFixtureGenerator) generateFutureTimestampScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating future timestamp scenario")
 
 	tmClientState := g.queryTendermintClientState(ctx, chainA)
@@ -437,7 +437,7 @@ func (g *SolanaFixtureGenerator) generateFutureTimestampScenario(ctx context.Con
 }
 
 // generateWrongTrustedHeightScenario creates a fixture referencing wrong trusted height
-func (g *SolanaFixtureGenerator) generateWrongTrustedHeightScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+func (g *TendermintLightClientFixtureGenerator) generateWrongTrustedHeightScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating wrong trusted height scenario")
 
 	tmClientState := g.queryTendermintClientState(ctx, chainA)
@@ -474,7 +474,7 @@ func (g *SolanaFixtureGenerator) generateWrongTrustedHeightScenario(ctx context.
 }
 
 // generateInvalidProtobufScenario creates a fixture with invalid protobuf bytes
-func (g *SolanaFixtureGenerator) generateInvalidProtobufScenario() {
+func (g *TendermintLightClientFixtureGenerator) generateInvalidProtobufScenario() {
 	g.suite.T().Log("🔧 Generating invalid protobuf scenario")
 
 	// Create completely invalid protobuf bytes
@@ -523,7 +523,7 @@ func (g *SolanaFixtureGenerator) generateInvalidProtobufScenario() {
 
 // Helper functions for modifying headers
 
-func (g *SolanaFixtureGenerator) createExpiredHeader(validHex string, trustingPeriodSeconds int64) string {
+func (g *TendermintLightClientFixtureGenerator) createExpiredHeader(validHex string, trustingPeriodSeconds int64) string {
 	headerBytes, _ := hex.DecodeString(validHex)
 	var header ibctmtypes.Header
 	if err := proto.Unmarshal(headerBytes, &header); err != nil {
@@ -538,7 +538,7 @@ func (g *SolanaFixtureGenerator) createExpiredHeader(validHex string, trustingPe
 	return hex.EncodeToString(modifiedBytes)
 }
 
-func (g *SolanaFixtureGenerator) createFutureTimestampHeader(validHex string, maxClockDriftSeconds int64) string {
+func (g *TendermintLightClientFixtureGenerator) createFutureTimestampHeader(validHex string, maxClockDriftSeconds int64) string {
 	headerBytes, _ := hex.DecodeString(validHex)
 	var header ibctmtypes.Header
 	if err := proto.Unmarshal(headerBytes, &header); err != nil {
@@ -554,7 +554,7 @@ func (g *SolanaFixtureGenerator) createFutureTimestampHeader(validHex string, ma
 }
 
 // GenerateMembershipVerificationScenarios generates fixtures for membership verification tests
-func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenarios(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenarios(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	if !g.Enabled {
 		return
 	}
@@ -575,7 +575,7 @@ func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenarios(ctx con
 }
 
 // GenerateMembershipVerificationScenariosWithPredefinedKeys generates membership fixtures using predefined keys
-func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
+func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx context.Context, chainA *cosmos.CosmosChain, keyPaths []string) {
 	if !g.Enabled {
 		return
 	}
@@ -590,7 +590,7 @@ func (g *SolanaFixtureGenerator) GenerateMembershipVerificationScenariosWithPred
 }
 
 // generateMembershipFixtureForKey generates a membership fixture for a specific predefined key
-func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Context, chainA *cosmos.CosmosChain, keyPath string, index int) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipFixtureForKey(ctx context.Context, chainA *cosmos.CosmosChain, keyPath string, index int) {
 	g.suite.T().Logf("🔧 Generating membership fixture for key: %s", keyPath)
 
 	// Get the current chain height for the query
@@ -757,7 +757,7 @@ func (g *SolanaFixtureGenerator) generateMembershipFixtureForKey(ctx context.Con
 }
 
 // generateMembershipHappyPath generates a valid membership proof for a real packet
-func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership happy path scenario")
 
 	// Get the current chain height for the query
@@ -867,7 +867,7 @@ func (g *SolanaFixtureGenerator) generateMembershipHappyPath(ctx context.Context
 }
 
 // generateMembershipInvalidProof generates a fixture with corrupted proof bytes
-func (g *SolanaFixtureGenerator) generateMembershipInvalidProof(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipInvalidProof(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership invalid proof scenario")
 
 	// Load the happy path fixture to get valid structure
@@ -907,7 +907,7 @@ func (g *SolanaFixtureGenerator) generateMembershipInvalidProof(ctx context.Cont
 }
 
 // generateMembershipWrongPath generates a fixture with incorrect commitment path
-func (g *SolanaFixtureGenerator) generateMembershipWrongPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipWrongPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership wrong path scenario")
 
 	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
@@ -940,7 +940,7 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongPath(ctx context.Context
 }
 
 // generateMembershipWrongValue generates a fixture with incorrect commitment value
-func (g *SolanaFixtureGenerator) generateMembershipWrongValue(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipWrongValue(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership wrong value scenario")
 
 	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
@@ -974,7 +974,7 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongValue(ctx context.Contex
 }
 
 // generateMembershipWrongHeight generates a fixture with incorrect proof height
-func (g *SolanaFixtureGenerator) generateMembershipWrongHeight(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
+func (g *TendermintLightClientFixtureGenerator) generateMembershipWrongHeight(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
 	g.suite.T().Log("🔧 Generating membership wrong height scenario")
 
 	happyPathFile := filepath.Join(g.FixtureDir, "verify_membership_happy_path.json")
@@ -1003,7 +1003,7 @@ func (g *SolanaFixtureGenerator) generateMembershipWrongHeight(ctx context.Conte
 }
 
 // generateNonMembershipScenario generates a non-membership proof fixture
-func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
+func (g *TendermintLightClientFixtureGenerator) generateNonMembershipScenario(ctx context.Context, chainA *cosmos.CosmosChain) {
 	g.suite.T().Log("🔧 Generating non-membership scenario")
 
 	// Get the current chain height for the query
@@ -1099,7 +1099,7 @@ func (g *SolanaFixtureGenerator) generateNonMembershipScenario(ctx context.Conte
 }
 
 // Helper function to construct ICS24 commitment path
-func (g *SolanaFixtureGenerator) constructCommitmentPath(sequence uint64, sourceChannel, destChannel string) []string {
+func (g *TendermintLightClientFixtureGenerator) constructCommitmentPath(sequence uint64, sourceChannel, destChannel string) []string {
 	return []string{
 		"commitments",
 		"ports",
@@ -1112,7 +1112,7 @@ func (g *SolanaFixtureGenerator) constructCommitmentPath(sequence uint64, source
 }
 
 // queryPacketCommitmentWithProof queries packet commitment using ABCI to get merkle proof
-func (g *SolanaFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, height uint64) (*abci.ResponseQuery, error) {
+func (g *TendermintLightClientFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, height uint64) (*abci.ResponseQuery, error) {
 	// For IBC v2 (Eureka), construct the packet commitment path similar to SP1 tests
 	// The path format follows: clients/{clientId}/packets/sequences/{sequence}
 	packetCommitmentPath := fmt.Sprintf("clients/%s/packets/sequences/%d", clientId, sequence)
@@ -1132,7 +1132,7 @@ func (g *SolanaFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Cont
 }
 
 // Helper function to deep copy fixture maps
-func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map[string]interface{} {
+func (g *TendermintLightClientFixtureGenerator) deepCopyFixture(src map[string]interface{}) map[string]interface{} {
 	// Marshal and unmarshal to create a deep copy
 	data, _ := json.Marshal(src)
 	var dst map[string]interface{}
@@ -1144,7 +1144,7 @@ func (g *SolanaFixtureGenerator) deepCopyFixture(src map[string]interface{}) map
 }
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
-func (g *SolanaFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
+func (g *TendermintLightClientFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
 	g.suite.T().Logf("🔄 Converting %d ABCI ProofOps to IBC MerkleProof format", len(proofOps.Ops))
 
 	// Each ProofOp contains ICS23 CommitmentProof data in op.Data

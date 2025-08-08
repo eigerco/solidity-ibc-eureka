@@ -10,4 +10,7 @@ license     = { workspace = true }
 ibc-core-commitment-types     = { workspace = true }
 ibc-core-host-types           = { workspace = true }
 thiserror                     = { workspace = true }
+serde                         = { workspace = true, features = ["derive"] }
+hex                           = { workspace = true }
+serde_json                    = { workspace = true, features = ["std"] }
 

@@ -49,7 +49,7 @@ type CosmosRelayerTestSuite struct {
 	RelayerClient relayertypes.RelayerServiceClient
 
 	// Fixture generation
-	SolanaFixtures *e2etypes.SolanaFixtureGenerator
+	TendermintLightClientFixtures *e2etypes.TendermintLightClientFixtureGenerator
 }
 
 // TestWithIbcEurekaTestSuite is the boilerplate code that allows the test suite to be run
@@ -65,7 +65,7 @@ func (s *CosmosRelayerTestSuite) SetupSuite(ctx context.Context) {
 	os.Setenv(testvalues.EnvKeyEthTestnetType, testvalues.EthTestnetTypeNone)
 
 	// Initialize fixture generation
-	s.SolanaFixtures = e2etypes.NewSolanaFixtureGenerator(&s.Suite)
+	s.TendermintLightClientFixtures = e2etypes.NewTendermintLightClientFixtureGenerator(&s.Suite)
 
 	s.TestSuite.SetupSuite(ctx)
 
@@ -571,8 +571,8 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 
 			updateTxBodyBz = resp.Tx
 
-			// Generate multiple Solana test scenarios if enabled
-			s.SolanaFixtures.GenerateMultipleUpdateClientScenarios(ctx, s.SimdA, updateTxBodyBz)
+			// Generate multiple Tendermint light client test scenarios if enabled
+			s.TendermintLightClientFixtures.GenerateMultipleUpdateClientScenarios(ctx, s.SimdA, updateTxBodyBz)
 		}))
 
 		s.Require().True(s.Run("Broadcast update client tx", func() {
@@ -581,8 +581,8 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 
 		// Generate membership verification fixtures if enabled
 		s.Require().True(s.Run("Generate membership fixtures", func() {
-			if !s.SolanaFixtures.Enabled {
-				s.T().Skip("Skipping membership fixture generation (GENERATE_SOLANA_FIXTURES not set)")
+			if !s.TendermintLightClientFixtures.Enabled {
+				s.T().Skip("Skipping membership fixture generation (GENERATE_TENDERMINT_LIGHT_CLIENT_FIXTURES not set)")
 				return
 			}
 
@@ -595,7 +595,7 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 				"clients/" + ibctesting.FirstClientID + "/consensusStates",
 			}
 
-			s.SolanaFixtures.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, s.SimdA, predefinedKeys)
+			s.TendermintLightClientFixtures.GenerateMembershipVerificationScenariosWithPredefinedKeys(ctx, s.SimdA, predefinedKeys)
 		}))
 
 		s.Require().True(s.Run("Verify client update on Chain A", func() {
