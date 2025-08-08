@@ -77,7 +77,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	var tmClientState ibctmtypes.ClientState
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.generator.RequireNoError(err)
-	
+
 	// Get the latest consensus state to use as our proof height
 	// We need a height where a consensus state exists
 	allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
@@ -86,7 +86,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.RequireNoError(err)
 	g.generator.RequireNotNil(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
 	g.generator.RequireGreater(len(allConsensusStatesResp.ConsensusStates), 0, "No consensus states found for client")
-	
+
 	// Use the latest consensus state height as our proof height
 	latestConsensusState := allConsensusStatesResp.ConsensusStates[0]
 	for _, cs := range allConsensusStatesResp.ConsensusStates {
@@ -98,8 +98,10 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.LogInfof("📊 Using consensus state at height %d for proof generation", proofHeight)
 
 	// Query using ABCI with the predefined key path
-	// Note: ABCI queries at a specific height actually query the state AFTER that block
-	// So to get the state at height N, we query at height N-1
+	// Note: ABCI queries follow Tendermint's height semantics where querying at height H
+	// returns the state after block H-1 was committed. The AppHash in block H represents
+	// the state after processing block H-1. Therefore, to get the state at height N, we query at N-1.
+	// See: https://github.com/tendermint/spec/blob/master/spec/abci/abci.md#query-1
 	abciReq := &abci.RequestQuery{
 		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
 		Data:   []byte(keyPath),
