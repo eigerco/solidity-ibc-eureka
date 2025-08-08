@@ -54,15 +54,19 @@ func (g *MembershipFixtureGenerator) GenerateMembershipVerificationScenariosWith
 			membershipType = "non-membership"
 		}
 		g.generator.LogInfof("🔍 Processing predefined key path: %s (%s)", keySpec.Key, membershipType)
-		g.generateMembershipFixtureForKey(ctx, chainA, keySpec.Key, i)
+		g.generateMembershipFixtureForKey(ctx, chainA, keySpec.Key, i, keySpec.Membership)
 	}
 
 	g.generator.LogInfo("✅ Predefined key membership scenarios generated successfully")
 }
 
 // generateMembershipFixtureForKey generates a membership fixture for a specific predefined key
-func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context.Context, chainA *cosmos.CosmosChain, keyPath string, index int) {
-	g.generator.LogInfof("🔧 Generating membership fixture for key: %s", keyPath)
+func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context.Context, chainA *cosmos.CosmosChain, keyPath string, index int, expectMembership bool) {
+	proofType := "membership"
+	if !expectMembership {
+		proofType = "non-membership"
+	}
+	g.generator.LogInfof("🔧 Generating %s fixture for key: %s", proofType, keyPath)
 
 	// Get the current chain height for the query
 	clientState, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
@@ -88,12 +92,19 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	abciResp, err := e2esuite.ABCIQuery(ctx, chainA, abciReq)
 	g.generator.RequireNoError(err)
 
-	// Determine if this is a membership (value exists) or non-membership (value empty) case
+	// Verify that the actual membership status matches our expectation
 	isMembership := len(abciResp.Value) > 0
+	if expectMembership && !isMembership {
+		g.generator.Fatalf("❌ Expected membership proof for key %s but value is empty", keyPath)
+	}
+	if !expectMembership && isMembership {
+		g.generator.Fatalf("❌ Expected non-membership proof for key %s but value exists (length: %d)", keyPath, len(abciResp.Value))
+	}
+	
 	if isMembership {
-		g.generator.LogInfof("✅ ABCI query successful - MEMBERSHIP case: value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
+		g.generator.LogInfof("✅ ABCI query successful - MEMBERSHIP case (as expected): value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
 	} else {
-		g.generator.LogInfof("✅ ABCI query successful - NON-MEMBERSHIP case: empty value, proof ops: %d", len(abciResp.ProofOps.Ops))
+		g.generator.LogInfof("✅ ABCI query successful - NON-MEMBERSHIP case (as expected): empty value, proof ops: %d", len(abciResp.ProofOps.Ops))
 	}
 
 	if len(abciResp.ProofOps.Ops) == 0 {
@@ -165,8 +176,23 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 
 		abciResp, err = e2esuite.ABCIQuery(ctx, chainA, abciReq)
 		g.generator.RequireNoError(err)
-		g.generator.RequireNotNil(abciResp.Value, "ABCI value is empty after re-query")
+		// For non-membership proofs, the value will be empty, which is expected
 		g.generator.RequireNotNil(abciResp.ProofOps.Ops, "ABCI proof is empty after re-query")
+
+		// Re-convert the proof with the new query results
+		proofBytes, err = g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
+		g.generator.RequireNoError(err)
+		g.generator.LogInfof("📦 Re-converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
+
+		// Re-check membership status after re-query and verify it matches expectations
+		isMembership = len(abciResp.Value) > 0
+		if expectMembership && !isMembership {
+			g.generator.Fatalf("❌ After re-query: Expected membership proof for key %s but value is empty", keyPath)
+		}
+		if !expectMembership && isMembership {
+			g.generator.Fatalf("❌ After re-query: Expected non-membership proof for key %s but value exists (length: %d)", keyPath, len(abciResp.Value))
+		}
+		g.generator.LogInfof("✅ Re-query successful - membership status verified as expected (%s)", proofType)
 
 		// Update proof height to match consensus state
 		proofHeight = actualHeight
@@ -189,12 +215,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.RequireNoError(err)
 
 	// Create the membership/non-membership proof message
-	proofType := "membership"
-	description := fmt.Sprintf("Valid membership proof for predefined key: %s", keyPath)
-	if !isMembership {
-		proofType = "non-membership"
-		description = fmt.Sprintf("Valid non-membership proof for predefined key: %s", keyPath)
-	}
+	description := fmt.Sprintf("Valid %s proof for predefined key: %s", proofType, keyPath)
 
 	membershipMsg := map[string]interface{}{
 		"height":             proofHeight,
