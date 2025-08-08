@@ -158,7 +158,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 
 	// Create the membership/non-membership proof message
 	description := fmt.Sprintf("Valid %s proof for predefined key: %s", proofType, keyPath)
-	
+
 	// Create enhanced metadata with proof format information
 	metadata := g.generator.CreateMetadata(description)
 	metadata["proof_format"] = "hex-encoded protobuf"
@@ -208,11 +208,11 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 }
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
-// 
+//
 // This function performs the critical conversion from Tendermint's ABCI proof format
 // to IBC's standardized MerkleProof protobuf format. The resulting bytes are suitable
 // for serialization in test fixtures and can be deserialized using:
-// - Go: commitmenttypes.MerkleProof (cosmos/ibc-go)  
+// - Go: commitmenttypes.MerkleProof (cosmos/ibc-go)
 // - Rust: ibc_proto::ibc::core::commitment::v1::MerkleProof -> ibc_core_commitment_types::merkle::MerkleProof
 func (g *MembershipFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
 	g.generator.LogInfof("🔄 Converting %d ABCI ProofOps to IBC MerkleProof format", len(proofOps.Ops))
