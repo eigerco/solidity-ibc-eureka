@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
@@ -143,11 +142,6 @@ func (g *TendermintLightClientFixtureGenerator) CreateUnifiedMetadata(scenarioNa
 // GenerateMultipleUpdateClientScenarios delegates to the update client submodule
 func (g *TendermintLightClientFixtureGenerator) GenerateMultipleUpdateClientScenarios(ctx context.Context, chainA *cosmos.CosmosChain, updateTxBodyBz []byte) {
 	g.updateClientGenerator.GenerateMultipleUpdateClientScenarios(ctx, chainA, updateTxBodyBz)
-}
-
-// GenerateMembershipVerificationScenarios delegates to the membership submodule
-func (g *TendermintLightClientFixtureGenerator) GenerateMembershipVerificationScenarios(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
-	g.membershipGenerator.GenerateMembershipVerificationScenarios(ctx, chainA, packet)
 }
 
 // GenerateMembershipVerificationScenariosWithPredefinedKeys delegates to the membership submodule

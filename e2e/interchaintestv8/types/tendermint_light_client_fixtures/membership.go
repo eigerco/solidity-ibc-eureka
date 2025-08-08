@@ -13,7 +13,6 @@ import (
 	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -34,20 +33,6 @@ func NewMembershipFixtureGenerator(generator FixtureGeneratorInterface) *Members
 	return &MembershipFixtureGenerator{
 		generator: generator,
 	}
-}
-
-// GenerateMembershipVerificationScenarios generates fixtures for membership verification tests (happy path only)
-func (g *MembershipFixtureGenerator) GenerateMembershipVerificationScenarios(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
-	if !g.generator.IsEnabled() {
-		return
-	}
-
-	g.generator.LogInfo("🔧 Generating membership verification scenario (happy path only)")
-
-	// Generate happy path scenario with real packet commitment
-	g.generateMembershipHappyPath(ctx, chainA, packet)
-
-	g.generator.LogInfo("✅ Membership verification scenario generated successfully")
 }
 
 // GenerateMembershipVerificationScenariosWithPredefinedKeys generates membership fixtures using predefined keys
@@ -230,149 +215,6 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	filename := filepath.Join(g.generator.GetFixtureDir(), fmt.Sprintf("verify_membership_predefined_key_%d.json", index))
 	g.generator.SaveJsonFixture(filename, unifiedFixture)
 	g.generator.LogInfof("💾 Predefined key membership fixture saved: %s", filename)
-}
-
-// generateMembershipHappyPath generates a valid membership proof for a real packet
-func (g *MembershipFixtureGenerator) generateMembershipHappyPath(ctx context.Context, chainA *cosmos.CosmosChain, packet channeltypesv2.Packet) {
-	g.generator.LogInfo("🔧 Generating membership happy path scenario")
-
-	// Get the current chain height for the query
-	clientState, err := e2esuite.GRPCQuery[clienttypes.QueryClientStateResponse](ctx, chainA, &clienttypes.QueryClientStateRequest{
-		ClientId: ibctesting.FirstClientID,
-	})
-	g.generator.RequireNoError(err)
-
-	var tmClientState ibctmtypes.ClientState
-	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
-	g.generator.RequireNoError(err)
-	currentHeight := tmClientState.LatestHeight.RevisionHeight
-
-	// Query the packet commitment with proof using ABCI
-	g.generator.LogInfof("🔍 Querying packet commitment via ABCI for ClientId: %s, Sequence: %d, Height: %d", packet.SourceClient, packet.Sequence, currentHeight)
-	abciResp, err := g.queryPacketCommitmentWithProof(ctx, chainA, packet.SourceClient, packet.Sequence, currentHeight)
-	g.generator.RequireNoError(err)
-
-	if len(abciResp.Value) == 0 {
-		g.generator.LogInfof("❌ ABCI commitment value is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
-	} else {
-		g.generator.LogInfof("✅ ABCI commitment found: %x", abciResp.Value)
-	}
-
-	if len(abciResp.ProofOps.Ops) == 0 {
-		g.generator.LogInfof("❌ ABCI proof is empty for ClientId: %s, Sequence: %d", packet.SourceClient, packet.Sequence)
-	} else {
-		g.generator.LogInfof("✅ ABCI proof found with %d operations", len(abciResp.ProofOps.Ops))
-	}
-
-	g.generator.RequireNotNil(abciResp.Value, "Packet commitment value should not be empty")
-	g.generator.RequireNotNil(abciResp.ProofOps.Ops, "Merkle proof should not be empty")
-	g.generator.RequireGreater(abciResp.Height, int64(0), "Proof height should not be zero")
-
-	// Get consensus state at proof height
-	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
-	consensusStateResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
-		ClientId:       ibctesting.FirstClientID,
-		RevisionNumber: 0, // Use revision number 0 for simd chains
-		RevisionHeight: proofHeight,
-	})
-	g.generator.RequireNoError(err)
-
-	var tmConsensusState ibctmtypes.ConsensusState
-	err = proto.Unmarshal(consensusStateResp.ConsensusState.Value, &tmConsensusState)
-	g.generator.RequireNoError(err)
-
-	// TODO: Convert ABCI proof operations to IBC MerkleProof format
-	// For now, use the original approach but add detailed logging to understand the structure
-	g.generator.LogInfof("🔍 ABCI ProofOps analysis: %d operations", len(abciResp.ProofOps.Ops))
-	for i, op := range abciResp.ProofOps.Ops {
-		g.generator.LogInfof("   ProofOp[%d]: type=%s, key_len=%d, data_len=%d", i, op.Type, len(op.Key), len(op.Data))
-		// Try to understand what's in op.Data
-		if len(op.Data) > 0 {
-			g.generator.LogInfof("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
-		}
-	}
-
-	// Convert ABCI ProofOps to IBC MerkleProof format
-	proofBytes, err := g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
-	g.generator.RequireNoError(err)
-	g.generator.LogInfof("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
-
-	// Build the commitment path using payload port information
-	sourcePort := packet.Payloads[0].SourcePort
-	destPort := packet.Payloads[0].DestinationPort
-	commitmentPath := g.constructCommitmentPath(packet.Sequence, sourcePort, destPort)
-
-	// Create the membership proof message
-	membershipMsg := map[string]interface{}{
-		"height":             proofHeight,
-		"delay_time_period":  0,
-		"delay_block_period": 0,
-		"proof":              hex.EncodeToString(proofBytes),
-		"path":               commitmentPath,
-		"value":              hex.EncodeToString(abciResp.Value),
-		"metadata":           g.generator.CreateMetadata("Valid membership proof for packet commitment"),
-	}
-
-	// Get client state for context
-	tmClientStatePtr := g.generator.QueryTendermintClientState(ctx, chainA)
-	clientStateMap := g.generator.ConvertClientStateToFixtureFormat(tmClientStatePtr, chainA.Config().ChainID)
-
-	consensusStateMap := map[string]interface{}{
-		"timestamp":            tmConsensusState.Timestamp.UnixNano(),
-		"root":                 hex.EncodeToString(tmConsensusState.Root.GetHash()),
-		"next_validators_hash": hex.EncodeToString(tmConsensusState.NextValidatorsHash),
-		"metadata":             g.generator.CreateMetadata(fmt.Sprintf("Consensus state at height %d", proofHeight)),
-	}
-
-	unifiedFixture := map[string]interface{}{
-		"scenario":        "membership_happy_path",
-		"client_state":    clientStateMap,
-		"consensus_state": consensusStateMap,
-		"membership_msg":  membershipMsg,
-		"packet_info": map[string]interface{}{
-			"sequence":         packet.Sequence,
-			"source_port":      sourcePort,
-			"destination_port": destPort,
-		},
-		"metadata": g.generator.CreateUnifiedMetadata("membership_happy_path", tmClientState.ChainId),
-	}
-
-	filename := filepath.Join(g.generator.GetFixtureDir(), "verify_membership_happy_path.json")
-	g.generator.SaveJsonFixture(filename, unifiedFixture)
-	g.generator.LogInfof("💾 Membership happy path fixture saved: %s", filename)
-}
-
-// Helper function to construct ICS24 commitment path
-func (g *MembershipFixtureGenerator) constructCommitmentPath(sequence uint64, sourceChannel, destChannel string) []string {
-	return []string{
-		"commitments",
-		"ports",
-		sourceChannel,
-		"channels",
-		destChannel,
-		"sequences",
-		fmt.Sprintf("%d", sequence),
-	}
-}
-
-// queryPacketCommitmentWithProof queries packet commitment using ABCI to get merkle proof
-func (g *MembershipFixtureGenerator) queryPacketCommitmentWithProof(ctx context.Context, chain *cosmos.CosmosChain, clientId string, sequence uint64, height uint64) (*abci.ResponseQuery, error) {
-	// For IBC v2 (Eureka), construct the packet commitment path similar to SP1 tests
-	// The path format follows: clients/{clientId}/packets/sequences/{sequence}
-	packetCommitmentPath := fmt.Sprintf("clients/%s/packets/sequences/%d", clientId, sequence)
-
-	// Use the proper IBC store key format, similar to how SP1 tests construct membershipKey
-	// Format: [][]byte{[]byte(ibcexported.StoreKey), packetCommitmentKey}
-	abciReq := &abci.RequestQuery{
-		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
-		Data:   []byte(packetCommitmentPath),
-		Height: int64(height) - 1, // Use height-1 for proof generation
-		Prove:  true,
-	}
-
-	g.generator.LogInfof("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), packetCommitmentPath, abciReq.Height)
-
-	return e2esuite.ABCIQuery(ctx, chain, abciReq)
 }
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
