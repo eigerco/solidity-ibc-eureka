@@ -8,6 +8,9 @@ use std::path::Path;
 
 use crate::{ClientState, TrustThreshold};
 use ibc_core_client_types::Height;
+use ibc_client_tendermint::types::{ConsensusState, Header};
+use ibc_core_commitment_types::commitment::CommitmentRoot;
+use prost::Message;
 
 /// Client state fixture structure from JSON
 #[derive(Debug, Deserialize)]
@@ -74,8 +77,30 @@ impl From<&ClientStateFixture> for ClientState {
     }
 }
 
-// TODO: Implement proper ConsensusState conversion when needed
-// For now, we'll keep the fixture loading infrastructure
+/// Create a consensus state from fixture (simplified for testing)
+pub fn consensus_state_from_fixture(fixture: &ConsensusStateFixture) -> Result<ConsensusState, Box<dyn std::error::Error>> {
+    let root_bytes = hex::decode(&fixture.root).map_err(|e| format!("Failed to decode root hex: {}", e))?;
+    let next_validators_hash_bytes = hex::decode(&fixture.next_validators_hash).map_err(|e| format!("Failed to decode next_validators_hash hex: {}", e))?;
+    
+    let timestamp = tendermint::Time::from_unix_timestamp(
+        (fixture.timestamp / 1_000_000_000) as i64,
+        (fixture.timestamp % 1_000_000_000) as u32,
+    ).map_err(|e| format!("Failed to create timestamp: {}", e))?;
+    
+    let next_validators_hash = tendermint::Hash::from_bytes(
+        tendermint::hash::Algorithm::Sha256,
+        &next_validators_hash_bytes
+    ).map_err(|e| format!("Failed to create next_validators_hash: {}", e))?;
+    
+    // Create consensus state with proper constructor
+    let commitment_root = CommitmentRoot::from_bytes(&root_bytes);
+    
+    Ok(ConsensusState::new(
+        commitment_root,
+        timestamp,
+        next_validators_hash,
+    ))
+}
 
 /// Load a fixture from the fixtures directory
 pub fn load_fixture(filename: &str) -> UpdateClientFixture {
@@ -107,10 +132,6 @@ pub fn load_future_timestamp_fixture() -> UpdateClientFixture {
     load_fixture("update_client_future_timestamp")
 }
 
-/// Load the wrong trusted height fixture
-pub fn load_wrong_trusted_height_fixture() -> UpdateClientFixture {
-    load_fixture("update_client_wrong_trusted_height")
-}
 
 /// Load the invalid protobuf fixture
 pub fn load_invalid_protobuf_fixture() -> UpdateClientFixture {
@@ -120,4 +141,19 @@ pub fn load_invalid_protobuf_fixture() -> UpdateClientFixture {
 /// Convert hex string to bytes (placeholder for Header conversion)
 pub fn hex_to_bytes(hex_str: &str) -> Vec<u8> {
     hex::decode(hex_str).expect("valid hex")
+}
+
+/// Convert hex string to Header by deserializing protobuf bytes
+pub fn hex_to_header(hex_str: &str) -> Result<Header, Box<dyn std::error::Error>> {
+    let bytes = hex::decode(hex_str).map_err(|e| format!("Failed to decode header hex: {}", e))?;
+    
+    // Try to deserialize as a tendermint Header protobuf
+    let proto_header = ibc_client_tendermint::types::proto::v1::Header::decode(&bytes[..])
+        .map_err(|e| format!("Failed to decode protobuf header: {}", e))?;
+    
+    // Convert to the IBC Header type
+    let header = Header::try_from(proto_header)
+        .map_err(|e| format!("Failed to convert header: {}", e))?;
+    
+    Ok(header)
 }

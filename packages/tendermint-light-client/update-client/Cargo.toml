@@ -12,6 +12,7 @@ ibc-client-tendermint            = { workspace = true, features = ["serde"] }
 ibc-core-host-types              = { workspace = true }
 ibc-core-client                  = { workspace = true }
 ibc-core-client-types            = { workspace = true }
+ibc-core-commitment-types        = { workspace = true }
 ibc-primitives                   = { workspace = true }
 sha2                             = { workspace = true }
 thiserror                        = { workspace = true }
@@ -19,4 +20,5 @@ serde                            = { workspace = true, features = ["derive"] }
 hex                              = { workspace = true }
 serde_json                       = { workspace = true, features = ["std"] }
 tendermint                       = { workspace = true }
+prost                            = { workspace = true }
 

@@ -12,6 +12,8 @@ use hex as _;
 use serde as _;
 use serde_json as _;
 use tendermint as _;
+use prost as _;
+use ibc_core_commitment_types as _;
 
 pub mod types;
 
