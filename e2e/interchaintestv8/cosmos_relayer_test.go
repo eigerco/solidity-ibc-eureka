@@ -589,7 +589,7 @@ func (s *CosmosRelayerTestSuite) Test_UpdateClient() {
 			s.T().Log("🔧 Generating membership verification fixtures using predefined keys")
 
 			predefinedKeys := []e2etypes.KeyPath{
-				{Key: "clients/07-tendermint-0/clientState", Membership: true},   // membership: exists
+				{Key: "clients/07-tendermint-0/clientState", Membership: true},    // membership: exists
 				{Key: "clients/07-tendermint-001/clientState", Membership: false}, // non-membership: doesn't exist
 			}
 

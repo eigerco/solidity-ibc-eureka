@@ -78,8 +78,8 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.generator.RequireNoError(err)
 
-	// Get the latest consensus state to use as our proof height
-	// We need a height where a consensus state exists
+	// Find the latest available consensus state to use as our proof height
+	// Note: Client state's latest height may not have a corresponding consensus state
 	allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
 		ClientId: ibctesting.FirstClientID,
 	})
@@ -87,15 +87,16 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.RequireNotNil(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
 	g.generator.RequireGreater(len(allConsensusStatesResp.ConsensusStates), 0, "No consensus states found for client")
 
-	// Use the latest consensus state height as our proof height
-	latestConsensusState := allConsensusStatesResp.ConsensusStates[0]
+	// Find the latest consensus state
+	var latestConsensusState *clienttypes.ConsensusStateWithHeight
 	for _, cs := range allConsensusStatesResp.ConsensusStates {
-		if cs.Height.RevisionHeight > latestConsensusState.Height.RevisionHeight {
-			latestConsensusState = cs
+		if latestConsensusState == nil || cs.Height.RevisionHeight > latestConsensusState.Height.RevisionHeight {
+			csPtr := cs // Create a copy to avoid loop variable capture
+			latestConsensusState = &csPtr
 		}
 	}
 	proofHeight := latestConsensusState.Height.RevisionHeight
-	g.generator.LogInfof("📊 Using consensus state at height %d for proof generation", proofHeight)
+	g.generator.LogInfof("📊 Using latest consensus state at height %d for proof generation", proofHeight)
 
 	// Query using ABCI with the predefined key path
 	// Note: ABCI queries follow Tendermint's height semantics where querying at height H
@@ -140,15 +141,14 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.RequireNoError(err)
 	g.generator.LogInfof("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 
-	// Verify that ABCI returned the height we expected (height-1 due to ABCI semantics)
+	// Verify that ABCI returned the height we expected
 	if uint64(abciResp.Height) != proofHeight-1 {
 		g.generator.Fatalf("❌ ABCI returned unexpected height: got %d, expected %d", abciResp.Height, proofHeight-1)
 	}
 
-	// We already have the consensus state from earlier, just use it
+	// Use the consensus state we already found
 	consensusStateResp := &clienttypes.QueryConsensusStateResponse{
 		ConsensusState: latestConsensusState.ConsensusState,
-		ProofHeight:    latestConsensusState.Height,
 	}
 
 	// Extract consensus state
@@ -164,7 +164,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 		"delay_time_period":  0,
 		"delay_block_period": 0,
 		"proof":              hex.EncodeToString(proofBytes),
-		"path":               []string{string(ibcexported.StoreKey), keyPath}, // Include IBC store prefix like SP1
+		"path":               []string{string(ibcexported.StoreKey), keyPath},
 		"value":              hex.EncodeToString(abciResp.Value),
 		"metadata":           g.generator.CreateMetadata(description),
 	}
