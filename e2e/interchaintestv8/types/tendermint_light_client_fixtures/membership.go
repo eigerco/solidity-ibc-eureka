@@ -77,17 +77,38 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	var tmClientState ibctmtypes.ClientState
 	err = proto.Unmarshal(clientState.ClientState.Value, &tmClientState)
 	g.generator.RequireNoError(err)
-	currentHeight := tmClientState.LatestHeight.RevisionHeight
+	
+	// Get the latest consensus state to use as our proof height
+	// We need a height where a consensus state exists
+	allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
+		ClientId: ibctesting.FirstClientID,
+	})
+	g.generator.RequireNoError(err)
+	g.generator.RequireNotNil(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
+	g.generator.RequireGreater(len(allConsensusStatesResp.ConsensusStates), 0, "No consensus states found for client")
+	
+	// Use the latest consensus state height as our proof height
+	latestConsensusState := allConsensusStatesResp.ConsensusStates[0]
+	for _, cs := range allConsensusStatesResp.ConsensusStates {
+		if cs.Height.RevisionHeight > latestConsensusState.Height.RevisionHeight {
+			latestConsensusState = cs
+		}
+	}
+	proofHeight := latestConsensusState.Height.RevisionHeight
+	g.generator.LogInfof("📊 Using consensus state at height %d for proof generation", proofHeight)
 
 	// Query using ABCI with the predefined key path
+	// Note: ABCI queries at a specific height actually query the state AFTER that block
+	// So to get the state at height N, we query at height N-1
 	abciReq := &abci.RequestQuery{
 		Path:   "store/" + string(ibcexported.StoreKey) + "/key",
 		Data:   []byte(keyPath),
-		Height: int64(currentHeight) - 1, // Use height-1 for proof generation
+		Height: int64(proofHeight) - 1,
 		Prove:  true,
 	}
 
-	g.generator.LogInfof("📡 ABCI Query: path=store/%s/key, data=%s, height=%d, prove=true", string(ibcexported.StoreKey), keyPath, abciReq.Height)
+	g.generator.LogInfof("📡 ABCI Query: path=store/%s/key, data=%s, height=%d (for proof at height %d), prove=true",
+		string(ibcexported.StoreKey), keyPath, abciReq.Height, proofHeight)
 
 	abciResp, err := e2esuite.ABCIQuery(ctx, chainA, abciReq)
 	g.generator.RequireNoError(err)
@@ -100,7 +121,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	if !expectMembership && isMembership {
 		g.generator.Fatalf("❌ Expected non-membership proof for key %s but value exists (length: %d)", keyPath, len(abciResp.Value))
 	}
-	
+
 	if isMembership {
 		g.generator.LogInfof("✅ ABCI query successful - MEMBERSHIP case (as expected): value length: %d, proof ops: %d", len(abciResp.Value), len(abciResp.ProofOps.Ops))
 	} else {
@@ -108,19 +129,8 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	}
 
 	if len(abciResp.ProofOps.Ops) == 0 {
-		g.generator.LogInfof("⚠️  ABCI proof is empty for key: %s, skipping", keyPath)
+		g.generator.Fatalf("❌  ABCI proof is empty for key: %s, skipping", keyPath)
 		return
-	}
-
-	// TODO: Convert ABCI proof operations to IBC MerkleProof format
-	// For now, use the original approach but add detailed logging to understand the structure
-	g.generator.LogInfof("🔍 ABCI ProofOps analysis: %d operations", len(abciResp.ProofOps.Ops))
-	for i, op := range abciResp.ProofOps.Ops {
-		g.generator.LogInfof("   ProofOp[%d]: type=%s, key_len=%d, data_len=%d", i, op.Type, len(op.Key), len(op.Data))
-		// Try to understand what's in op.Data
-		if len(op.Data) > 0 {
-			g.generator.LogInfof("   ProofOp[%d] data first 32 bytes: %x", i, op.Data[:min(32, len(op.Data))])
-		}
 	}
 
 	// Convert ABCI ProofOps to IBC MerkleProof format
@@ -128,85 +138,15 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 	g.generator.RequireNoError(err)
 	g.generator.LogInfof("📦 Converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
 
-	// Get consensus state at the same height as the proof
-	proofHeight := uint64(abciResp.Height + 1) // ABCI returns height-1, so add 1 for actual height
+	// Verify that ABCI returned the height we expected (height-1 due to ABCI semantics)
+	if uint64(abciResp.Height) != proofHeight-1 {
+		g.generator.Fatalf("❌ ABCI returned unexpected height: got %d, expected %d", abciResp.Height, proofHeight-1)
+	}
 
-	// Query consensus state at the proof height (or find the closest available one)
-	consensusStateResp, consensusErr := e2esuite.GRPCQuery[clienttypes.QueryConsensusStateResponse](ctx, chainA, &clienttypes.QueryConsensusStateRequest{
-		ClientId:       ibctesting.FirstClientID,
-		RevisionNumber: 0,
-		RevisionHeight: proofHeight,
-	})
-
-	// If consensus state doesn't exist at proof height, find the closest one
-	if consensusErr != nil {
-		g.generator.LogInfof("⚠️  No consensus state at proof height %d, finding closest available", proofHeight)
-
-		// Query all consensus states to find the best match
-		allConsensusStatesResp, err := e2esuite.GRPCQuery[clienttypes.QueryConsensusStatesResponse](ctx, chainA, &clienttypes.QueryConsensusStatesRequest{
-			ClientId: ibctesting.FirstClientID,
-		})
-		g.generator.RequireNoError(err)
-		g.generator.RequireNotNil(allConsensusStatesResp.ConsensusStates, "No consensus states found for client")
-
-		// Find the consensus state with height closest to but not exceeding proof height
-		var bestMatch *clienttypes.ConsensusStateWithHeight
-		for _, cs := range allConsensusStatesResp.ConsensusStates {
-			if cs.Height.RevisionHeight <= proofHeight {
-				if bestMatch == nil || cs.Height.RevisionHeight > bestMatch.Height.RevisionHeight {
-					bestMatch = &cs
-				}
-			}
-		}
-
-		g.generator.RequireNotNil(bestMatch, "No suitable consensus state found")
-		actualHeight := bestMatch.Height.RevisionHeight
-		g.generator.LogInfof("🔍 Using consensus state at height %d (closest to proof height %d)", actualHeight, proofHeight)
-
-		// Now query ABCI again with the consensus state height to get matching proof
-		abciReq = &abci.RequestQuery{
-			Path:   "store/" + string(ibcexported.StoreKey) + "/key",
-			Data:   []byte(keyPath),
-			Height: int64(actualHeight) - 1, // Use consensus state height for proof
-			Prove:  true,
-		}
-
-		g.generator.LogInfof("📡 Re-querying ABCI with consensus state height: path=store/%s/key, data=%s, height=%d, prove=true",
-			string(ibcexported.StoreKey), keyPath, abciReq.Height)
-
-		abciResp, err = e2esuite.ABCIQuery(ctx, chainA, abciReq)
-		g.generator.RequireNoError(err)
-		// For non-membership proofs, the value will be empty, which is expected
-		g.generator.RequireNotNil(abciResp.ProofOps.Ops, "ABCI proof is empty after re-query")
-
-		// Re-convert the proof with the new query results
-		proofBytes, err = g.convertABCIProofOpsToMerkleProof(abciResp.ProofOps)
-		g.generator.RequireNoError(err)
-		g.generator.LogInfof("📦 Re-converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
-
-		// Re-check membership status after re-query and verify it matches expectations
-		isMembership = len(abciResp.Value) > 0
-		if expectMembership && !isMembership {
-			g.generator.Fatalf("❌ After re-query: Expected membership proof for key %s but value is empty", keyPath)
-		}
-		if !expectMembership && isMembership {
-			g.generator.Fatalf("❌ After re-query: Expected non-membership proof for key %s but value exists (length: %d)", keyPath, len(abciResp.Value))
-		}
-		g.generator.LogInfof("✅ Re-query successful - membership status verified as expected (%s)", proofType)
-
-		// Update proof height to match consensus state
-		proofHeight = actualHeight
-
-		// Use the best match consensus state
-		var tmConsensusState ibctmtypes.ConsensusState
-		err = proto.Unmarshal(bestMatch.ConsensusState.Value, &tmConsensusState)
-		g.generator.RequireNoError(err)
-
-		// Store consensus state for later use
-		consensusStateResp = &clienttypes.QueryConsensusStateResponse{
-			ConsensusState: bestMatch.ConsensusState,
-			ProofHeight:    bestMatch.Height,
-		}
+	// We already have the consensus state from earlier, just use it
+	consensusStateResp := &clienttypes.QueryConsensusStateResponse{
+		ConsensusState: latestConsensusState.ConsensusState,
+		ProofHeight:    latestConsensusState.Height,
 	}
 
 	// Extract consensus state
