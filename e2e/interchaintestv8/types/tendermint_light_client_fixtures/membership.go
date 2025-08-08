@@ -158,6 +158,13 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 
 	// Create the membership/non-membership proof message
 	description := fmt.Sprintf("Valid %s proof for predefined key: %s", proofType, keyPath)
+	
+	// Create enhanced metadata with proof format information
+	metadata := g.generator.CreateMetadata(description)
+	metadata["proof_format"] = "hex-encoded protobuf"
+	metadata["proof_type_details"] = "ibc.core.commitment.v1.MerkleProof"
+	metadata["proof_conversion"] = "Converted from ABCI ProofOps to IBC MerkleProof format"
+	metadata["proof_size_bytes"] = len(proofBytes)
 
 	membershipMsg := map[string]interface{}{
 		"height":             proofHeight,
@@ -166,7 +173,7 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 		"proof":              hex.EncodeToString(proofBytes),
 		"path":               []string{string(ibcexported.StoreKey), keyPath},
 		"value":              hex.EncodeToString(abciResp.Value),
-		"metadata":           g.generator.CreateMetadata(description),
+		"metadata":           metadata,
 	}
 
 	// Get client state for context
@@ -201,8 +208,15 @@ func (g *MembershipFixtureGenerator) generateMembershipFixtureForKey(ctx context
 }
 
 // convertABCIProofOpsToMerkleProof converts ABCI ProofOps format to IBC MerkleProof format
+// 
+// This function performs the critical conversion from Tendermint's ABCI proof format
+// to IBC's standardized MerkleProof protobuf format. The resulting bytes are suitable
+// for serialization in test fixtures and can be deserialized using:
+// - Go: commitmenttypes.MerkleProof (cosmos/ibc-go)  
+// - Rust: ibc_proto::ibc::core::commitment::v1::MerkleProof -> ibc_core_commitment_types::merkle::MerkleProof
 func (g *MembershipFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *cmtcrypto.ProofOps) ([]byte, error) {
 	g.generator.LogInfof("🔄 Converting %d ABCI ProofOps to IBC MerkleProof format", len(proofOps.Ops))
+	g.generator.LogInfof("   📋 Output format: ibc.core.commitment.v1.MerkleProof protobuf")
 
 	// Each ProofOp contains ICS23 CommitmentProof data in op.Data
 	// We need to extract these and create an IBC MerkleProof
@@ -235,6 +249,9 @@ func (g *MembershipFixtureGenerator) convertABCIProofOpsToMerkleProof(proofOps *
 		return nil, fmt.Errorf("failed to marshal MerkleProof: %w", err)
 	}
 
-	g.generator.LogInfof("✅ Successfully converted ABCI ProofOps to IBC MerkleProof: %d bytes", len(proofBytes))
+	g.generator.LogInfof("✅ Successfully converted ABCI ProofOps to IBC MerkleProof:")
+	g.generator.LogInfof("   📦 Size: %d bytes", len(proofBytes))
+	g.generator.LogInfof("   🔗 Contains: %d CommitmentProof structures", len(commitmentProofs))
+	g.generator.LogInfof("   📚 Usage: Hex-encode these bytes for fixture storage")
 	return proofBytes, nil
 }

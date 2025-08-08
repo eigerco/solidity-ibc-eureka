@@ -198,32 +198,24 @@ fn assert_membership_failure(ctx: &TestContext) {
 
 #[test]
 fn test_verify_membership_happy_path() {
-    // This test is expected to fail until fixtures are properly generated and the proof format issue is resolved
     let fixture = load_membership_predefined_key_fixture();
 
     let Some(ctx) = setup_test_context(fixture) else {
         return;
     };
 
-    // TODO: This test is expected to fail initially due to the ABCI ProofOps vs MerkleProof format issue
-    // For now, we expect this to fail and treat that as success (testing the test infrastructure)
     match execute_membership(&ctx) {
         Ok(()) => {
             println!(
-                "✅ Membership verification unexpectedly succeeded for {}",
+                "✅ Membership verification succeeded for {}",
                 ctx.fixture.scenario
             );
-            println!("   This means the fixture format issue has been resolved!");
         }
         Err(e) => {
-            println!(
+            panic!(
                 "❌ Membership verification failed for {} with: {:?}",
                 ctx.fixture.scenario, e
             );
-            println!(
-                "   This matches the expected behavior - we have a fixture generator issue to fix"
-            );
-            println!("   The test infrastructure is working correctly");
         }
     }
 }
