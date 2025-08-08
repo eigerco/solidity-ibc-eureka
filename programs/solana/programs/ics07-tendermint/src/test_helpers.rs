@@ -47,16 +47,9 @@ pub mod fixtures {
     }
 
     pub fn load_update_client_fixture(filename: &str) -> UpdateClientFixture {
-        // First try the new tendermint-light-client fixtures location
-        let new_fixture_path = format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
-        let old_fixture_path = format!("../../tests/fixtures/{filename}.json");
-        
-        let fixture_path = if std::path::Path::new(&new_fixture_path).exists() {
-            new_fixture_path
-        } else {
-            old_fixture_path
-        };
-        
+        let fixture_path =
+            format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
+
         let fixture_content = std::fs::read_to_string(&fixture_path)
             .unwrap_or_else(|_| panic!("Failed to read fixture: {fixture_path}"));
 
@@ -99,10 +92,12 @@ pub mod fixtures {
 
     // Helper to check if a fixture file exists
     pub fn fixture_exists(filename: &str) -> bool {
-        let new_fixture_path = format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
+        let new_fixture_path =
+            format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
         let old_fixture_path = format!("../../tests/fixtures/{filename}.json");
-        
-        std::path::Path::new(&new_fixture_path).exists() || std::path::Path::new(&old_fixture_path).exists()
+
+        std::path::Path::new(&new_fixture_path).exists()
+            || std::path::Path::new(&old_fixture_path).exists()
     }
 
     pub fn hex_to_bytes32(hex_str: &str) -> [u8; 32] {
@@ -253,15 +248,16 @@ pub mod fixtures {
 
     pub fn load_membership_fixture(filename: &str) -> MembershipVerificationFixture {
         // First try the new tendermint-light-client fixtures location
-        let new_fixture_path = format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
+        let new_fixture_path =
+            format!("../../../../packages/tendermint-light-client/fixtures/{filename}.json");
         let old_fixture_path = format!("../../tests/fixtures/{filename}.json");
-        
+
         let fixture_path = if std::path::Path::new(&new_fixture_path).exists() {
             new_fixture_path
         } else {
             old_fixture_path
         };
-        
+
         let fixture_content = std::fs::read_to_string(&fixture_path)
             .unwrap_or_else(|_| panic!("Failed to read fixture: {fixture_path}"));
 
