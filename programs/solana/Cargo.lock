@@ -5240,11 +5240,8 @@ dependencies = [
 name = "tendermint-light-client-membership"
 version = "0.1.0"
 dependencies = [
- "hex",
  "ibc-core-commitment-types",
  "ibc-core-host-types",
- "serde",
- "serde_json",
  "thiserror 2.0.12",
 ]
 

@@ -4,18 +4,8 @@
     clippy::nursery,
     clippy::pedantic,
     warnings,
-    unused_crate_dependencies
 )]
-
-#[cfg(test)]
-mod fixtures;
-
-#[cfg(test)]
-mod tests;
-
-use hex as _;
-use serde as _;
-use serde_json as _;
+#![cfg_attr(not(test), deny(unused_crate_dependencies))]
 
 use ibc_core_commitment_types::{
     commitment::CommitmentRoot,
