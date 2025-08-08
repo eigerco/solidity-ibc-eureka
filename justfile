@@ -221,6 +221,15 @@ test-benchmark testname=".\\*":
 test-cargo testname="--all":
 	cargo test {{testname}} --locked --no-fail-fast -- --nocapture
 
+# Run the tendermint light client tests
+[group('test')]
+test-tendermint-light-client testname="":
+	@echo "Running tendermint light client tests..."
+	cargo test --package tendermint-light-client-update-client {{testname}} --locked --no-fail-fast -- --nocapture
+	cargo test --package tendermint-light-client-membership {{testname}} --locked --no-fail-fast -- --nocapture
+	cargo test --package tendermint-light-client-misbehaviour {{testname}} --locked --no-fail-fast -- --nocapture
+	cargo test --package tendermint-light-client-uc-and-membership {{testname}} --locked --no-fail-fast -- --nocapture
+
 # Run the tests in abigen
 [group('test')]
 test-abigen:
